@@ -1,0 +1,487 @@
+---
+title: Debugging
+description: Debug logging, troubleshooting, and understanding the WhatsApp protocol
+---
+
+Debugging is essential when working with Baileys, especially when implementing custom features or troubleshooting connection issues. This guide covers the logging system, debugging techniques, and tools to help you understand what's happening under the hood.
+
+## Log levels
+
+Baileys uses [Pino](https://getpino.io/) for logging, which supports multiple log levels:
+
+| Level | Value | Description |
+|-------|-------|-------------|
+| `fatal` | 60 | Fatal errors that cause the application to crash |
+| `error` | 50 | Errors that prevent operations from completing |
+| `warn` | 40 | Warning messages for potentially problematic situations |
+| `info` | 30 | General informational messages (default) |
+| `debug` | 20 | Detailed debugging information |
+| `trace` | 10 | Very detailed trace information |
+
+## Basic logging setup
+
+### Simple logging
+
+The easiest way to enable logging:
+
+```typescript
+import P from 'pino'
+import makeWASocket from '@whiskeysockets/baileys'
+
+const sock = makeWASocket({
+  logger: P({ level: 'debug' }),
+})
+```
+
+### Pretty printing
+
+For human-readable console output:
+
+```typescript
+import P from 'pino'
+
+const logger = P({
+  level: 'debug',
+  transport: {
+    target: 'pino-pretty',
+    options: { 
+      colorize: true,
+      translateTime: 'SYS:standard',
+      ignore: 'pid,hostname'
+    }
+  }
+})
+
+const sock = makeWASocket({ logger })
+```
+
+<Note>
+  You need to install `pino-pretty` separately: `npm install pino-pretty`
+</Note>
+
+## Advanced logging configuration
+
+### Multiple log outputs
+
+Send logs to both console and file:
+
+```typescript
+import P from 'pino'
+
+const logger = P({
+  level: 'trace',
+  transport: {
+    targets: [
+      {
+        target: 'pino-pretty',
+        options: { colorize: true },
+        level: 'info',  // Only show info+ in console
+      },
+      {
+        target: 'pino/file',
+        options: { destination: './wa-logs.txt' },
+        level: 'trace',  // Log everything to file
+      },
+    ],
+  },
+})
+
+const sock = makeWASocket({ logger })
+```
+
+### Rotating log files
+
+For production environments, use rotating log files:
+
+```typescript
+import P from 'pino'
+import { join } from 'path'
+
+const logger = P({
+  level: 'debug',
+  transport: {
+    target: 'pino-roll',
+    options: {
+      file: join(__dirname, 'logs', 'wa'),
+      frequency: 'daily',
+      size: '10m',
+      mkdir: true,
+    },
+  },
+})
+```
+
+<Tip>
+  Install `pino-roll` for log rotation: `npm install pino-roll`
+</Tip>
+
+## Debug mode
+
+Enable debug mode to see all unhandled WhatsApp protocol messages:
+
+```typescript
+const sock = makeWASocket({
+  logger: P({ level: 'debug' }),
+})
+```
+
+With debug logging enabled, you'll see messages like:
+
+```json
+{
+  "level": 20,
+  "unhandled": true,
+  "msgId": "12345.67890-1234567890",
+  "fromMe": false,
+  "frame": {
+    "tag": "ib",
+    "attrs": { "from": "@s.whatsapp.net" },
+    "content": [...]
+  },
+  "msg": "communication recv"
+}
+```
+
+<Note>
+  Messages with `"unhandled": true` indicate protocol messages that Baileys received but didn't process. These are opportunities to discover new features!
+</Note>
+
+## Trace mode
+
+For maximum verbosity, use trace level:
+
+```typescript
+const sock = makeWASocket({
+  logger: P({ level: 'trace' }),
+})
+```
+
+Trace mode shows:
+- XML representation of all sent and received frames
+- Noise protocol encryption/decryption details
+- Cache operations
+- Transaction details
+- All internal state changes
+
+<Warning>
+  Trace logging generates a LOT of output. Only use it when diagnosing specific issues, and consider logging to a file instead of the console.
+</Warning>
+
+## Understanding log output
+
+### Sent messages (XML)
+
+When `level` is `'trace'`, outgoing messages appear as:
+
+```json
+{
+  "level": 10,
+  "xml": "<iq id='123.456-7' to='s.whatsapp.net' type='get' xmlns='encrypt'><count/></iq>",
+  "msg": "xml send"
+}
+```
+
+### Received messages (XML)
+
+Incoming messages appear as:
+
+```json
+{
+  "level": 10,
+  "xml": "<iq from='s.whatsapp.net' id='123.456-7' type='result'><count value='50'/></iq>",
+  "msg": "recv xml"
+}
+```
+
+### Connection events
+
+```json
+{
+  "level": 30,
+  "browser": ["Baileys", "Chrome", "4.0.0"],
+  "msg": "connected to WA"
+}
+```
+
+## Debugging techniques
+
+### Inspect binary nodes
+
+Convert binary nodes to readable format:
+
+```typescript
+import { binaryNodeToString } from '@whiskeysockets/baileys'
+
+sock.ws.on('CB:message', (node) => {
+  // Convert to XML-like string
+  console.log(binaryNodeToString(node))
+})
+```
+
+### Monitor connection state
+
+```typescript
+sock.ev.on('connection.update', (update) => {
+  const { connection, lastDisconnect } = update
+  
+  console.log('Connection status:', connection)
+  
+  if (connection === 'close') {
+    console.error('Disconnected:', lastDisconnect?.error)
+    console.log('Status code:', lastDisconnect?.error?.output?.statusCode)
+  }
+})
+```
+
+### Track message failures
+
+```typescript
+sock.ev.on('messages.update', (updates) => {
+  for (const update of updates) {
+    if (update.update.status === 'ERROR') {
+      console.error('Message failed:', update.key.id)
+      console.error('Error:', update.update.messageStubParameters)
+    }
+  }
+})
+```
+
+### Debug authentication
+
+Monitor auth state changes:
+
+```typescript
+sock.ev.on('creds.update', (creds) => {
+  console.log('Credentials updated')
+  console.log('Has noiseKey:', !!creds.noiseKey)
+  console.log('Has signedIdentityKey:', !!creds.signedIdentityKey)
+  console.log('Logged in as:', creds.me)
+})
+```
+
+## Common issues and solutions
+
+<AccordionGroup>
+  <Accordion title="Connection keeps closing">
+    Enable debug logging to see the disconnect reason:
+    
+    ```typescript
+    import { DisconnectReason } from '@whiskeysockets/baileys'
+    
+    sock.ev.on('connection.update', (update) => {
+      if (update.connection === 'close') {
+        const statusCode = update.lastDisconnect?.error?.output?.statusCode
+        
+        if (statusCode === DisconnectReason.loggedOut) {
+          console.log('Device logged out, delete session and scan again')
+        } else if (statusCode === DisconnectReason.connectionClosed) {
+          console.log('Connection closed, reconnecting...')
+        } else if (statusCode === DisconnectReason.timedOut) {
+          console.log('Connection timed out, reconnecting...')
+        }
+      }
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Messages not sending">
+    Check message send errors:
+    
+    ```typescript
+    try {
+      const result = await sock.sendMessage(jid, { text: 'Hello' })
+      console.log('Message sent:', result)
+    } catch (error) {
+      console.error('Failed to send:', error.message)
+      console.error('Stack trace:', error.stack)
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="QR code not appearing">
+    Listen for QR updates:
+    
+    ```typescript
+    sock.ev.on('connection.update', (update) => {
+      if (update.qr) {
+        console.log('QR Code received:')
+        console.log(update.qr)
+        // Use qrcode-terminal to display
+        require('qrcode-terminal').generate(update.qr, { small: true })
+      }
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Decryption failures">
+    Monitor decryption issues:
+    
+    ```typescript
+    sock.ev.on('messages.upsert', ({ messages, type }) => {
+      for (const msg of messages) {
+        if (msg.messageStubType) {
+          console.log('Message stub:', msg.messageStubType)
+          console.log('Parameters:', msg.messageStubParameters)
+        }
+      }
+    })
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Protocol exploration
+
+### Enable full protocol logging
+
+See every protocol message:
+
+```typescript
+import P from 'pino'
+
+const logger = P({
+  level: 'trace',
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+      translateTime: 'HH:MM:ss',
+      ignore: 'pid,hostname',
+    },
+  },
+})
+
+const sock = makeWASocket({ logger })
+
+// Listen for all unhandled messages
+sock.ws.on('frame', (frame) => {
+  if (frame && typeof frame === 'object' && 'tag' in frame) {
+    logger.debug({ frame }, 'Raw frame received')
+  }
+})
+```
+
+### Understanding the protocol
+
+<Tip>
+  To learn the WhatsApp protocol:
+  - Study the [Libsignal Protocol](https://signal.org/docs/) for encryption
+  - Read about the [Noise Protocol](http://www.noiseprotocol.org/) for handshakes
+  - Examine Baileys source code, especially `socket.ts`
+</Tip>
+
+### Message frame structure
+
+Every WhatsApp message has this structure:
+
+```typescript
+interface BinaryNode {
+  tag: string        // Message type (e.g., 'message', 'iq', 'ib')
+  attrs: {           // Metadata
+    [key: string]: string
+  }
+  content: BinaryNode[] | Buffer | string  // Payload
+}
+```
+
+Common tags:
+- `message` - Chat messages
+- `iq` - Info/query (requests and responses)
+- `ib` - Inbound notifications
+- `presence` - Online/typing status
+- `notification` - System notifications
+- `receipt` - Message receipts (delivered/read)
+
+## Performance debugging
+
+### Monitor memory usage
+
+```typescript
+setInterval(() => {
+  const usage = process.memoryUsage()
+  console.log('Memory:', {
+    rss: `${Math.round(usage.rss / 1024 / 1024)}MB`,
+    heapUsed: `${Math.round(usage.heapUsed / 1024 / 1024)}MB`,
+  })
+}, 30000) // Every 30 seconds
+```
+
+### Track event counts
+
+```typescript
+const eventCounts = {}
+
+const originalEmit = sock.ev.emit
+sock.ev.emit = function(event, ...args) {
+  eventCounts[event] = (eventCounts[event] || 0) + 1
+  return originalEmit.apply(this, [event, ...args])
+}
+
+setInterval(() => {
+  console.log('Event counts:', eventCounts)
+}, 60000) // Every minute
+```
+
+## Testing and development tools
+
+### Mock logger for testing
+
+```typescript
+import P from 'pino'
+
+const mockLogger = P({ level: 'silent' }) // No output
+
+const sock = makeWASocket({
+  logger: mockLogger,
+})
+```
+
+### Conditional logging
+
+```typescript
+const isDevelopment = process.env.NODE_ENV !== 'production'
+
+const sock = makeWASocket({
+  logger: P({ 
+    level: isDevelopment ? 'debug' : 'info'
+  }),
+})
+```
+
+### Custom log formatting
+
+```typescript
+import P from 'pino'
+
+const logger = P({
+  level: 'debug',
+  formatters: {
+    level: (label) => {
+      return { level: label.toUpperCase() }
+    },
+    bindings: (bindings) => {
+      return { pid: bindings.pid, host: bindings.hostname }
+    },
+  },
+  timestamp: () => `,"time":"${new Date().toISOString()}"`,
+})
+```
+
+## Troubleshooting checklist
+
+When debugging issues:
+
+1. **Enable debug logging** - Set `logger: P({ level: 'debug' })`
+2. **Check connection state** - Monitor `connection.update` events
+3. **Verify credentials** - Ensure auth state is properly saved/loaded
+4. **Inspect error codes** - Check `lastDisconnect?.error?.output?.statusCode`
+5. **Review unhandled messages** - Look for `{ unhandled: true }` in logs
+6. **Test with minimal config** - Remove custom options one by one
+7. **Update Baileys** - Ensure you're on the latest version
+8. **Check WhatsApp status** - Verify your account isn't banned
+
+## Next steps
+
+- Learn about [WebSocket events](/advanced/websocket-events)
+- Explore [custom functionality](/advanced/custom-functionality)
+- Join the [Discord community](https://discord.gg/WeJM5FP9GG) for help
+- Read the [Baileys source code](https://github.com/WhiskeySockets/Baileys)

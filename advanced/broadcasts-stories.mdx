@@ -1,0 +1,220 @@
+---
+title: Broadcasts and stories
+description: Send messages to broadcast lists and WhatsApp status (stories)
+---
+
+Baileys supports sending messages to both broadcast lists and WhatsApp status updates (stories). This guide covers how to work with these special message types.
+
+## Sending to broadcast lists
+
+Broadcast lists allow you to send messages to multiple recipients who will receive them as individual chats. Each recipient sees the message as if it was sent directly to them.
+
+### Broadcast JID format
+
+Broadcast list identifiers follow the format `12345678@broadcast`, where the numeric prefix is the broadcast list ID.
+
+```typescript
+const broadcastJid = '12345678@broadcast'
+```
+
+### Sending messages to broadcasts
+
+To send a message to a broadcast list, use the `broadcast: true` option:
+
+```typescript
+await sock.sendMessage(
+  '12345678@broadcast',
+  {
+    text: 'Hello everyone!'
+  },
+  {
+    broadcast: true
+  }
+)
+```
+
+<Note>
+  You can send messages to broadcast lists the same way you send messages to groups and individual chats. The main difference is setting the `broadcast: true` option.
+</Note>
+
+### Query broadcast list information
+
+Retrieve a broadcast list's name and recipients:
+
+```typescript
+const bList = await sock.getBroadcastListInfo('1234@broadcast')
+console.log(`List name: ${bList.name}`)
+console.log(`Recipients: ${bList.recipients}`)
+```
+
+## Sending status updates (stories)
+
+ Status updates (also known as stories) are temporary messages that appear in your contacts' Status tab and disappear after 24 hours.
+
+### Status JID
+
+Status updates are sent to the special JID `status@broadcast`:
+
+```typescript
+const statusJid = 'status@broadcast'
+```
+
+### Basic status message
+
+Send a text status update:
+
+```typescript
+await sock.sendMessage(
+  'status@broadcast',
+  {
+    text: 'Hello from my status!'
+  },
+  {
+    statusJidList: statusJidList,
+    broadcast: true
+  }
+)
+```
+
+### Status with media
+
+Send an image or video as a status update:
+
+```typescript
+await sock.sendMessage(
+  'status@broadcast',
+  {
+    image: {
+      url: 'https://example.com/image.jpg'
+    },
+    caption: 'Check out this image!'
+  },
+  {
+    backgroundColor: '#FF5733',
+    font: 2,
+    statusJidList: statusJidList,
+    broadcast: true
+  }
+)
+```
+
+## Status message options
+
+When sending status updates, you can customize the appearance and delivery:
+
+### Required options
+
+<AccordionGroup>
+  <Accordion title="statusJidList">
+    An array of JIDs (phone numbers) of contacts who should receive this status update. Only users in this list will see your status.
+    
+    ```typescript
+    const statusJidList = [
+      '1234567890@s.whatsapp.net',
+      '0987654321@s.whatsapp.net'
+    ]
+    ```
+  </Accordion>
+  
+  <Accordion title="broadcast">
+    Must be set to `true` to enable broadcast mode for status messages.
+    
+    ```typescript
+    { broadcast: true }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Optional styling options
+
+<AccordionGroup>
+  <Accordion title="backgroundColor">
+    Set a background color for text status updates. Use hex color codes.
+    
+    ```typescript
+    { backgroundColor: '#FF5733' }
+    ```
+  </Accordion>
+  
+  <Accordion title="font">
+    Choose a font style for text status updates. Different numeric values represent different fonts.
+    
+    ```typescript
+    { font: 2 }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Supported message types
+
+You can send various message types as status updates:
+
+- **Text messages** - `extendedTextMessage`
+- **Images** - `imageMessage`
+- **Videos** - `videoMessage`
+- **Voice messages** - `voiceMessage`
+
+<Tip>
+  For a complete list of message content types and their options, see the [MiscMessageGenerationOptions](https://baileys.whiskeysockets.io/types/MiscMessageGenerationOptions.html) and [AnyRegularMessageContent](https://baileys.whiskeysockets.io/types/AnyRegularMessageContent.html) type references.
+</Tip>
+
+## Complete example
+
+Here's a complete example combining all the concepts:
+
+```typescript
+import makeWASocket from '@whiskeysockets/baileys'
+
+const sock = makeWASocket({ /* config */ })
+
+// Get your contacts for status updates
+const statusJidList = [
+  '1234567890@s.whatsapp.net',
+  '0987654321@s.whatsapp.net'
+]
+
+// Send a text status
+await sock.sendMessage(
+  'status@broadcast',
+  { text: 'Having a great day!' },
+  {
+    backgroundColor: '#4CAF50',
+    font: 1,
+    statusJidList: statusJidList,
+    broadcast: true
+  }
+)
+
+// Send an image status
+await sock.sendMessage(
+  'status@broadcast',
+  {
+    image: { url: './photo.jpg' },
+    caption: 'Beautiful sunset'
+  },
+  {
+    statusJidList: statusJidList,
+    broadcast: true
+  }
+)
+
+// Send to a broadcast list
+const broadcastInfo = await sock.getBroadcastListInfo('12345@broadcast')
+if (broadcastInfo) {
+  await sock.sendMessage(
+    '12345@broadcast',
+    { text: 'Announcement for everyone!' },
+    { broadcast: true }
+  )
+}
+```
+
+## Limitations
+
+<Warning>
+  WhatsApp Web does not currently support creating new broadcast lists. You can only send messages to existing broadcast lists and delete them.
+</Warning>
+
+<Note>
+  Status updates are only visible to contacts who have your phone number saved and whom you have in your contact list.
+</Note>

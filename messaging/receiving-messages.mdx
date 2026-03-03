@@ -1,0 +1,430 @@
+---
+title: Receiving messages
+description: Handle incoming messages and message events with the messages.upsert event
+---
+
+Baileys uses an event-driven architecture to handle incoming messages. All message events are emitted through the socket's event emitter.
+
+## Basic message handling
+
+Listen to the `messages.upsert` event to receive new messages:
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages, type }) => {
+  console.log('Received', messages.length, 'messages')
+  console.log('Type:', type) // 'notify' | 'append'
+  
+  for (const msg of messages) {
+    console.log('Message:', msg)
+  }
+})
+```
+
+### Event parameters
+
+<ParamField path="messages" type="WAMessage[]">
+  Array of received messages
+</ParamField>
+
+<ParamField path="type" type="'notify' | 'append'">
+  - `notify`: New message received in real-time
+  - `append`: Historical message loaded from sync
+</ParamField>
+
+## Message structure
+
+Each `WAMessage` contains:
+
+```typescript
+interface WAMessage {
+  key: {
+    remoteJid: string      // Chat ID
+    fromMe: boolean         // Sent by you
+    id: string             // Unique message ID
+    participant?: string   // Sender in group chat
+  }
+  message?: {              // Message content
+    conversation?: string  // Text message
+    imageMessage?: {...}   // Image
+    videoMessage?: {...}   // Video
+    // ... other message types
+  }
+  messageTimestamp: number // Unix timestamp
+  pushName?: string        // Sender's name
+  broadcast?: boolean      // Broadcast message
+  // ... other fields
+}
+```
+
+## Processing messages
+
+### Check if message exists
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (!m.message) {
+    // No message content (e.g., delivery receipt)
+    return
+  }
+  
+  // Process message
+  console.log('Message received:', m.message)
+})
+```
+
+### Get message type
+
+```typescript
+import { getContentType } from '@whiskeysockets/baileys'
+
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (!m.message) return
+  
+  const messageType = getContentType(m.message)
+  console.log('Message type:', messageType)
+  // Possible values: 'conversation', 'imageMessage', 'videoMessage', etc.
+})
+```
+
+### Extract text content
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (!m.message) return
+  
+  const messageType = getContentType(m.message)
+  
+  if (messageType === 'conversation') {
+    const text = m.message.conversation
+    console.log('Text:', text)
+  } else if (messageType === 'extendedTextMessage') {
+    const text = m.message.extendedTextMessage?.text
+    console.log('Text:', text)
+  }
+})
+```
+
+## Message types
+
+### Text messages
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (m.message?.conversation) {
+    console.log('Simple text:', m.message.conversation)
+  }
+  
+  if (m.message?.extendedTextMessage) {
+    const extended = m.message.extendedTextMessage
+    console.log('Text:', extended.text)
+    console.log('Quoted message:', extended.contextInfo?.quotedMessage)
+    console.log('Mentioned JIDs:', extended.contextInfo?.mentionedJid)
+  }
+})
+```
+
+### Media messages
+
+```typescript
+import { downloadMediaMessage } from '@whiskeysockets/baileys'
+
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (!m.message) return
+  
+  const messageType = getContentType(m.message)
+  
+  // Handle images
+  if (messageType === 'imageMessage') {
+    console.log('Image caption:', m.message.imageMessage?.caption)
+    
+    // Download the image
+    const buffer = await downloadMediaMessage(
+      m,
+      'buffer',
+      {},
+      { 
+        logger,
+        reuploadRequest: sock.updateMediaMessage
+      }
+    )
+    
+    // Save or process the image
+    fs.writeFileSync('./image.jpg', buffer)
+  }
+  
+  // Handle videos
+  if (messageType === 'videoMessage') {
+    console.log('Video caption:', m.message.videoMessage?.caption)
+    console.log('Is GIF:', m.message.videoMessage?.gifPlayback)
+  }
+  
+  // Handle audio
+  if (messageType === 'audioMessage') {
+    console.log('Is voice message:', m.message.audioMessage?.ptt)
+  }
+  
+  // Handle documents
+  if (messageType === 'documentMessage') {
+    console.log('File name:', m.message.documentMessage?.fileName)
+    console.log('MIME type:', m.message.documentMessage?.mimetype)
+  }
+})
+```
+
+### Special messages
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (!m.message) return
+  
+  // Location messages
+  if (m.message.locationMessage) {
+    const location = m.message.locationMessage
+    console.log('Latitude:', location.degreesLatitude)
+    console.log('Longitude:', location.degreesLongitude)
+    console.log('Name:', location.name)
+  }
+  
+  // Contact messages
+  if (m.message.contactMessage) {
+    const contact = m.message.contactMessage
+    console.log('Display name:', contact.displayName)
+    console.log('vCard:', contact.vcard)
+  }
+  
+  // Poll messages
+  if (m.message.pollCreationMessage) {
+    const poll = m.message.pollCreationMessage
+    console.log('Poll name:', poll.name)
+    console.log('Options:', poll.options)
+  }
+})
+```
+
+## Identifying sender
+
+### Individual chats
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  const senderJid = m.key.remoteJid // Chat JID
+  const isFromMe = m.key.fromMe     // true if you sent it
+  const senderName = m.pushName     // Sender's display name
+  
+  console.log(`${senderName} (${senderJid}): message received`)
+})
+```
+
+### Group chats
+
+```typescript
+import { isJidGroup } from '@whiskeysockets/baileys'
+
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  const chatJid = m.key.remoteJid
+  
+  if (isJidGroup(chatJid)) {
+    const senderJid = m.key.participant // Sender's JID in group
+    const senderName = m.pushName
+    
+    console.log(`Group: ${chatJid}`)
+    console.log(`Sender: ${senderName} (${senderJid})`)
+  }
+})
+```
+
+## Auto-replying to messages
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (!m.message) return
+  if (m.key.fromMe) return // Don't reply to own messages
+  
+  const messageType = getContentType(m.message)
+  
+  if (messageType === 'conversation' || messageType === 'extendedTextMessage') {
+    const text = m.message.conversation || m.message.extendedTextMessage?.text
+    
+    if (text?.toLowerCase() === 'hello') {
+      await sock.sendMessage(
+        m.key.remoteJid!,
+        { text: 'Hello! How can I help you?' },
+        { quoted: m }
+      )
+    }
+  }
+})
+```
+
+## Message receipts and status
+
+Track message delivery and read status:
+
+```typescript
+// Listen for message status updates
+sock.ev.on('messages.update', (updates) => {
+  for (const update of updates) {
+    console.log('Message ID:', update.key.id)
+    console.log('Status:', update.update.status)
+    // Status: PENDING, SERVER_ACK, DELIVERY_ACK, READ, PLAYED
+  }
+})
+
+// Listen for message receipts (in groups)
+sock.ev.on('message-receipt.update', (receipts) => {
+  for (const receipt of receipts) {
+    console.log('Message ID:', receipt.key.id)
+    console.log('User:', receipt.receipt.userJid)
+    console.log('Read at:', receipt.receipt.readTimestamp)
+  }
+})
+```
+
+## Handling reactions
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (m.message?.reactionMessage) {
+    const reaction = m.message.reactionMessage
+    console.log('Reaction:', reaction.text) // Emoji or empty string to remove
+    console.log('Reacted to message:', reaction.key) // Message being reacted to
+  }
+})
+```
+
+## Advanced filtering
+
+### Ignore own messages
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (m.key.fromMe) return // Skip own messages
+  
+  // Process other messages
+})
+```
+
+### Filter by chat type
+
+```typescript
+import { isJidGroup, isJidStatusBroadcast } from '@whiskeysockets/baileys'
+
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  const chatJid = m.key.remoteJid!
+  
+  if (isJidGroup(chatJid)) {
+    console.log('Group message')
+  } else if (isJidStatusBroadcast(chatJid)) {
+    console.log('Status update')
+  } else {
+    console.log('Private message')
+  }
+})
+```
+
+### Filter by type
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages, type }) => {
+  if (type !== 'notify') return // Only process real-time messages
+  
+  // Process messages
+})
+```
+
+## Implementing a message store
+
+Store messages for later retrieval:
+
+```typescript
+const messageStore = new Map<string, WAMessage>()
+
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  for (const msg of messages) {
+    const key = msg.key.id!
+    messageStore.set(key, msg)
+  }
+})
+
+// Retrieve a message
+function getMessage(id: string): WAMessage | undefined {
+  return messageStore.get(id)
+}
+```
+
+<Tip>
+  Use a database for production applications. The in-memory store will lose data when the process restarts.
+</Tip>
+
+## Error handling
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  try {
+    const m = messages[0]
+    
+    // Process message
+    await processMessage(m)
+  } catch (error) {
+    console.error('Error processing message:', error)
+  }
+})
+```
+
+## Best practices
+
+<Tip>
+  - Always check if `m.message` exists before processing
+  - Use `getContentType()` to safely get the message type
+  - Implement proper error handling for all message processing
+  - Store messages in a database for production use
+  - Filter out your own messages to avoid infinite loops in auto-reply
+  - Use `type === 'notify'` to only process real-time messages
+</Tip>
+
+<Warning>
+  - Don't reply to every message automatically - this can get your number banned
+  - Always check `m.key.fromMe` to avoid replying to your own messages
+  - Handle media downloads asynchronously to avoid blocking
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Sending messages" icon="paper-plane" href="/messaging/sending-messages">
+    Learn how to send messages
+  </Card>
+  <Card title="Message modification" icon="edit" href="/messaging/message-modification">
+    Edit, delete, and react to messages
+  </Card>
+  <Card title="Text messages" icon="message" href="/messaging/text-messages">
+    Work with text, mentions, and quotes
+  </Card>
+  <Card title="Media messages" icon="image" href="/messaging/media-messages">
+    Handle images, videos, and documents
+  </Card>
+</CardGroup>

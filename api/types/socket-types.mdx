@@ -1,0 +1,870 @@
+---
+title: Socket types
+description: WASocket interface and all available socket methods
+---
+
+## WASocket
+
+The main socket interface returned by `makeWASocket()`. It provides all methods for interacting with WhatsApp.
+
+```typescript
+export type WASocket = ReturnType<typeof makeWASocket>
+```
+
+## Core properties
+
+<ResponseField name="ev" type="BaileysEventEmitter" required>
+  Event emitter for all WhatsApp events
+</ResponseField>
+
+<ResponseField name="ws" type="WebSocket" required>
+  Underlying WebSocket connection
+</ResponseField>
+
+<ResponseField name="authState" type="AuthenticationState" required>
+  Current authentication state and credentials
+</ResponseField>
+
+<ResponseField name="user" type="Contact">
+  Your own user information
+</ResponseField>
+
+<ResponseField name="signalRepository" type="SignalRepositoryWithLIDStore" required>
+  Signal protocol repository for encryption
+</ResponseField>
+
+## Messaging methods
+
+### sendMessage
+
+Send a message to a chat.
+
+```typescript
+sendMessage(
+  jid: string,
+  content: AnyMessageContent,
+  options?: MiscMessageGenerationOptions
+): Promise<WAMessage>
+```
+
+<ResponseField name="jid" type="string" required>
+  JID of the recipient (user or group)
+</ResponseField>
+
+<ResponseField name="content" type="AnyMessageContent" required>
+  Message content (text, media, etc.)
+</ResponseField>
+
+<ResponseField name="options" type="MiscMessageGenerationOptions">
+  Additional options (quoted message, ephemeral, etc.)
+</ResponseField>
+
+**Example:**
+
+```typescript
+// Send text message
+await sock.sendMessage('1234567890@s.whatsapp.net', { 
+  text: 'Hello!' 
+})
+
+// Send image with caption
+await sock.sendMessage('1234567890@s.whatsapp.net', {
+  image: { url: './photo.jpg' },
+  caption: 'Check this out!'
+})
+
+// Reply to a message
+await sock.sendMessage('1234567890@s.whatsapp.net', 
+  { text: 'Thanks!' },
+  { quoted: messageObj }
+)
+```
+
+### relayMessage
+
+Relay a pre-constructed message.
+
+```typescript
+relayMessage(
+  jid: string,
+  message: proto.IMessage,
+  options: MessageRelayOptions
+): Promise<string>
+```
+
+Lower-level method for sending already-constructed messages. Returns the message ID.
+
+### sendReceipt
+
+Send a receipt for a message.
+
+```typescript
+sendReceipt(
+  jid: string,
+  participant: string | undefined,
+  messageIds: string[],
+  type: MessageReceiptType
+): Promise<void>
+```
+
+### readMessages
+
+Mark messages as read.
+
+```typescript
+readMessages(keys: WAMessageKey[]): Promise<void>
+```
+
+**Example:**
+
+```typescript
+await sock.readMessages([message.key])
+```
+
+## Group management methods
+
+### groupCreate
+
+Create a new group.
+
+```typescript
+groupCreate(
+  subject: string,
+  participants: string[]
+): Promise<GroupMetadata>
+```
+
+<ResponseField name="subject" type="string" required>
+  Group name
+</ResponseField>
+
+<ResponseField name="participants" type="string[]" required>
+  Array of participant JIDs
+</ResponseField>
+
+**Example:**
+
+```typescript
+const group = await sock.groupCreate('My Group', [
+  '1111111111@s.whatsapp.net',
+  '2222222222@s.whatsapp.net'
+])
+console.log('Created group:', group.id)
+```
+
+### groupMetadata
+
+Get group metadata.
+
+```typescript
+groupMetadata(jid: string): Promise<GroupMetadata>
+```
+
+**Example:**
+
+```typescript
+const metadata = await sock.groupMetadata('123456@g.us')
+console.log('Group subject:', metadata.subject)
+console.log('Participants:', metadata.participants.length)
+```
+
+### groupUpdateSubject
+
+Update group name.
+
+```typescript
+groupUpdateSubject(jid: string, subject: string): Promise<void>
+```
+
+### groupUpdateDescription
+
+Update group description.
+
+```typescript
+groupUpdateDescription(
+  jid: string,
+  description?: string
+): Promise<void>
+```
+
+### groupParticipantsUpdate
+
+Add, remove, promote, or demote participants.
+
+```typescript
+groupParticipantsUpdate(
+  jid: string,
+  participants: string[],
+  action: ParticipantAction
+): Promise<Array<{ status: string; jid: string }>>
+```
+
+<ResponseField name="action" type="ParticipantAction" required>
+  `'add'`, `'remove'`, `'promote'`, `'demote'`
+</ResponseField>
+
+**Example:**
+
+```typescript
+// Add participants
+await sock.groupParticipantsUpdate(
+  '123456@g.us',
+  ['1111111111@s.whatsapp.net'],
+  'add'
+)
+
+// Make admin
+await sock.groupParticipantsUpdate(
+  '123456@g.us',
+  ['1111111111@s.whatsapp.net'],
+  'promote'
+)
+```
+
+### groupSettingUpdate
+
+Update group settings.
+
+```typescript
+groupSettingUpdate(
+  jid: string,
+  setting: 'announcement' | 'not_announcement' | 'locked' | 'unlocked'
+): Promise<void>
+```
+
+- `announcement`: Only admins can send messages
+- `locked`: Only admins can edit group info
+
+### groupLeave
+
+Leave a group.
+
+```typescript
+groupLeave(id: string): Promise<void>
+```
+
+### groupInviteCode
+
+Get group invite code.
+
+```typescript
+groupInviteCode(jid: string): Promise<string>
+```
+
+### groupRevokeInvite
+
+Revoke and generate new invite code.
+
+```typescript
+groupRevokeInvite(jid: string): Promise<string>
+```
+
+### groupAcceptInvite
+
+Join group using invite code.
+
+```typescript
+groupAcceptInvite(code: string): Promise<string>
+```
+
+Returns the group JID.
+
+### groupGetInviteInfo
+
+Get group info from invite code (without joining).
+
+```typescript
+groupGetInviteInfo(code: string): Promise<GroupMetadata>
+```
+
+### groupToggleEphemeral
+
+Enable/disable disappearing messages.
+
+```typescript
+groupToggleEphemeral(
+  jid: string,
+  ephemeralExpiration: number
+): Promise<void>
+```
+
+<ResponseField name="ephemeralExpiration" type="number" required>
+  Duration in seconds. `0` to disable.
+</ResponseField>
+
+### groupFetchAllParticipating
+
+Fetch all groups you're in.
+
+```typescript
+groupFetchAllParticipating(): Promise<{ [jid: string]: GroupMetadata }>
+```
+
+### groupRequestParticipantsList
+
+Get pending join requests.
+
+```typescript
+groupRequestParticipantsList(jid: string): Promise<any[]>
+```
+
+### groupRequestParticipantsUpdate
+
+Approve or reject join requests.
+
+```typescript
+groupRequestParticipantsUpdate(
+  jid: string,
+  participants: string[],
+  action: 'approve' | 'reject'
+): Promise<Array<{ status: string; jid: string }>>
+```
+
+### groupMemberAddMode
+
+Set who can add members.
+
+```typescript
+groupMemberAddMode(
+  jid: string,
+  mode: 'admin_add' | 'all_member_add'
+): Promise<void>
+```
+
+### groupJoinApprovalMode
+
+Enable/disable join approval.
+
+```typescript
+groupJoinApprovalMode(
+  jid: string,
+  mode: 'on' | 'off'
+): Promise<void>
+```
+
+## Community methods
+
+### communityCreate
+
+Create a community.
+
+```typescript
+communityCreate(
+  subject: string,
+  body: string
+): Promise<GroupMetadata | null>
+```
+
+### communityMetadata
+
+Get community metadata.
+
+```typescript
+communityMetadata(jid: string): Promise<GroupMetadata>
+```
+
+### communityFetchLinkedGroups
+
+Get all groups linked to a community.
+
+```typescript
+communityFetchLinkedGroups(jid: string): Promise<{
+  communityJid: string
+  isCommunity: boolean
+  linkedGroups: Array<{
+    id?: string
+    subject: string
+    creation?: number
+    owner?: string
+    size?: number
+  }>
+}>
+```
+
+### communityLinkGroup
+
+Link a group to a community.
+
+```typescript
+communityLinkGroup(
+  groupJid: string,
+  parentCommunityJid: string
+): Promise<void>
+```
+
+### communityUnlinkGroup
+
+Unlink a group from a community.
+
+```typescript
+communityUnlinkGroup(
+  groupJid: string,
+  parentCommunityJid: string
+): Promise<void>
+```
+
+### communityAcceptInvite
+
+Join a community using invite code.
+
+```typescript
+communityAcceptInvite(code: string): Promise<string>
+```
+
+### communityInviteCode
+
+Get community invite code.
+
+```typescript
+communityInviteCode(jid: string): Promise<string>
+```
+
+## Newsletter methods
+
+### newsletterCreate
+
+Create a newsletter channel.
+
+```typescript
+newsletterCreate(
+  name: string,
+  description?: string
+): Promise<NewsletterMetadata>
+```
+
+### newsletterMetadata
+
+Get newsletter metadata.
+
+```typescript
+newsletterMetadata(
+  type: 'invite' | 'jid',
+  key: string
+): Promise<NewsletterMetadata | null>
+```
+
+### newsletterFollow
+
+Follow a newsletter.
+
+```typescript
+newsletterFollow(jid: string): Promise<any>
+```
+
+### newsletterUnfollow
+
+Unfollow a newsletter.
+
+```typescript
+newsletterUnfollow(jid: string): Promise<any>
+```
+
+### newsletterUpdateName
+
+Update newsletter name.
+
+```typescript
+newsletterUpdateName(jid: string, name: string): Promise<any>
+```
+
+### newsletterUpdateDescription
+
+Update newsletter description.
+
+```typescript
+newsletterUpdateDescription(
+  jid: string,
+  description: string
+): Promise<any>
+```
+
+### newsletterUpdatePicture
+
+Update newsletter picture.
+
+```typescript
+newsletterUpdatePicture(
+  jid: string,
+  content: WAMediaUpload
+): Promise<any>
+```
+
+### newsletterReactMessage
+
+React to a newsletter message.
+
+```typescript
+newsletterReactMessage(
+  jid: string,
+  serverId: string,
+  reaction?: string
+): Promise<void>
+```
+
+### newsletterFetchMessages
+
+Fetch newsletter messages.
+
+```typescript
+newsletterFetchMessages(
+  jid: string,
+  count: number,
+  since: number,
+  after: number
+): Promise<BinaryNode>
+```
+
+## Profile methods
+
+### updateProfilePicture
+
+Update your profile picture.
+
+```typescript
+updateProfilePicture(
+  jid: string,
+  content: WAMediaUpload
+): Promise<void>
+```
+
+### removeProfilePicture
+
+Remove profile picture.
+
+```typescript
+removeProfilePicture(jid: string): Promise<void>
+```
+
+### updateProfileName
+
+Update your profile name.
+
+```typescript
+updateProfileName(name: string): Promise<void>
+```
+
+### updateProfileStatus
+
+Update your status/about.
+
+```typescript
+updateProfileStatus(status: string): Promise<void>
+```
+
+### profilePictureUrl
+
+Get profile picture URL.
+
+```typescript
+profilePictureUrl(
+  jid: string,
+  type?: 'image' | 'preview'
+): Promise<string | undefined>
+```
+
+### fetchStatus
+
+Get user's status/about.
+
+```typescript
+fetchStatus(jid: string): Promise<{ status: string; setAt: Date }>
+```
+
+## Privacy settings methods
+
+### updateLastSeenPrivacy
+
+Set last seen privacy.
+
+```typescript
+updateLastSeenPrivacy(
+  value: WAPrivacyValue
+): Promise<void>
+```
+
+<ResponseField name="value" type="WAPrivacyValue">
+  `'all'`, `'contacts'`, `'contact_blacklist'`, `'none'`
+</ResponseField>
+
+### updateOnlinePrivacy
+
+Set online presence privacy.
+
+```typescript
+updateOnlinePrivacy(
+  value: WAPrivacyOnlineValue
+): Promise<void>
+```
+
+<ResponseField name="value" type="WAPrivacyOnlineValue">
+  `'all'`, `'match_last_seen'`
+</ResponseField>
+
+### updateProfilePicturePrivacy
+
+Set profile picture privacy.
+
+```typescript
+updateProfilePicturePrivacy(
+  value: WAPrivacyValue
+): Promise<void>
+```
+
+### updateStatusPrivacy
+
+Set status privacy.
+
+```typescript
+updateStatusPrivacy(
+  value: WAPrivacyValue
+): Promise<void>
+```
+
+### updateReadReceiptsPrivacy
+
+Set read receipts privacy.
+
+```typescript
+updateReadReceiptsPrivacy(
+  value: WAReadReceiptsValue
+): Promise<void>
+```
+
+<ResponseField name="value" type="WAReadReceiptsValue">
+  `'all'`, `'none'`
+</ResponseField>
+
+### updateGroupsAddPrivacy
+
+Set who can add you to groups.
+
+```typescript
+updateGroupsAddPrivacy(
+  value: WAPrivacyGroupAddValue
+): Promise<void>
+```
+
+<ResponseField name="value" type="WAPrivacyGroupAddValue">
+  `'all'`, `'contacts'`, `'contact_blacklist'`
+</ResponseField>
+
+### fetchPrivacySettings
+
+Get current privacy settings.
+
+```typescript
+fetchPrivacySettings(
+  force?: boolean
+): Promise<{ [_: string]: string }>
+```
+
+## Business methods
+
+### getCatalog
+
+Get business catalog.
+
+```typescript
+getCatalog(options: GetCatalogOptions): Promise<{
+  products: Product[]
+  nextCursor?: string
+}>
+```
+
+### productCreate
+
+Create a catalog product.
+
+```typescript
+productCreate(product: ProductCreate): Promise<Product>
+```
+
+### productUpdate
+
+Update a catalog product.
+
+```typescript
+productUpdate(
+  productId: string,
+  update: ProductUpdate
+): Promise<Product>
+```
+
+### productDelete
+
+Delete a catalog product.
+
+```typescript
+productDelete(productIds: string[]): Promise<void>
+```
+
+### updateBussinesProfile
+
+Update business profile.
+
+```typescript
+updateBussinesProfile(
+  args: UpdateBussinesProfileProps
+): Promise<BinaryNode>
+```
+
+## Utility methods
+
+### getPrivacyTokens
+
+Get privacy tokens for JIDs.
+
+```typescript
+getPrivacyTokens(jids: string[]): Promise<BinaryNode>
+```
+
+### assertSessions
+
+Ensure Signal sessions exist for JIDs.
+
+```typescript
+assertSessions(
+  jids: string[],
+  force?: boolean
+): Promise<boolean>
+```
+
+### refreshMediaConn
+
+Refresh media connection credentials.
+
+```typescript
+refreshMediaConn(forceGet?: boolean): Promise<MediaConnInfo>
+```
+
+### waUploadToServer
+
+Upload media to WhatsApp servers.
+
+```typescript
+waUploadToServer: WAMediaUploadFunction
+```
+
+### query
+
+Send a custom IQ query.
+
+```typescript
+query(node: BinaryNode): Promise<BinaryNode>
+```
+
+### sendNode
+
+Send a custom binary node.
+
+```typescript
+sendNode(node: BinaryNode): Promise<void>
+```
+
+### logout
+
+Logout and delete credentials.
+
+```typescript
+logout(): Promise<void>
+```
+
+### end
+
+Close the connection.
+
+```typescript
+end(error?: Error): void
+```
+
+## Presence methods
+
+### sendPresenceUpdate
+
+Update your presence.
+
+```typescript
+sendPresenceUpdate(
+  type: WAPresence,
+  toJid?: string
+): Promise<void>
+```
+
+<ResponseField name="type" type="WAPresence" required>
+  `'available'`, `'unavailable'`, `'composing'`, `'recording'`, `'paused'`
+</ResponseField>
+
+<ResponseField name="toJid" type="string">
+  Specific chat to update presence in
+</ResponseField>
+
+**Example:**
+
+```typescript
+// Set online
+await sock.sendPresenceUpdate('available')
+
+// Show typing in a chat
+await sock.sendPresenceUpdate('composing', '1234567890@s.whatsapp.net')
+
+// Stop typing
+await sock.sendPresenceUpdate('paused', '1234567890@s.whatsapp.net')
+```
+
+### presenceSubscribe
+
+Subscribe to a user's presence.
+
+```typescript
+presenceSubscribe(jid: string): Promise<void>
+```
+
+## Blocklist methods
+
+### updateBlockStatus
+
+Block or unblock a user.
+
+```typescript
+updateBlockStatus(
+  jid: string,
+  action: 'block' | 'unblock'
+): Promise<void>
+```
+
+### fetchBlocklist
+
+Get your blocklist.
+
+```typescript
+fetchBlocklist(): Promise<string[]>
+```
+
+## App state sync methods
+
+### chatModify
+
+Modify chat state (archive, pin, mute, etc.).
+
+```typescript
+chatModify(
+  modification: ChatModification,
+  jid: string
+): Promise<void>
+```
+
+**Example:**
+
+```typescript
+// Archive chat
+await sock.chatModify({ archive: true }, '1234567890@s.whatsapp.net')
+
+// Pin chat
+await sock.chatModify({ pin: true }, '1234567890@s.whatsapp.net')
+
+// Mute chat for 8 hours
+await sock.chatModify(
+  { mute: Date.now() + 8 * 60 * 60 * 1000 },
+  '1234567890@s.whatsapp.net'
+)
+```

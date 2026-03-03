@@ -1,0 +1,625 @@
+---
+title: Event types
+description: Type definitions for Baileys event system and BaileysEventMap
+---
+
+## BaileysEventMap
+
+The event map defines all events emitted by the Baileys socket. Subscribe to these events to handle WhatsApp updates.
+
+```typescript
+export type BaileysEventMap = {
+  'connection.update': Partial<ConnectionState>
+  'creds.update': Partial<AuthenticationCreds>
+  'messaging-history.set': HistorySet
+  'chats.upsert': Chat[]
+  'chats.update': ChatUpdate[]
+  'chats.delete': string[]
+  'chats.lock': { id: string; locked: boolean }
+  'contacts.upsert': Contact[]
+  'contacts.update': Partial<Contact>[]
+  'presence.update': PresenceUpdate
+  'messages.upsert': MessagesUpsert
+  'messages.update': WAMessageUpdate[]
+  'messages.delete': MessagesDelete
+  'messages.reaction': MessageReaction[]
+  'messages.media-update': MediaUpdate[]
+  'message-receipt.update': MessageUserReceiptUpdate[]
+  'groups.upsert': GroupMetadata[]
+  'groups.update': Partial<GroupMetadata>[]
+  'group-participants.update': GroupParticipantsUpdate
+  'group.join-request': GroupJoinRequest
+  'group.member-tag.update': MemberTagUpdate
+  'blocklist.set': { blocklist: string[] }
+  'blocklist.update': BlocklistUpdate
+  'call': WACallEvent[]
+  'labels.edit': Label
+  'labels.association': LabelAssociation
+  'newsletter.reaction': NewsletterReaction
+  'newsletter.view': NewsletterView
+  'newsletter-participants.update': NewsletterParticipantsUpdate
+  'newsletter-settings.update': NewsletterSettingsUpdate
+  'settings.update': SettingsUpdate
+  'lid-mapping.update': LIDMapping
+}
+```
+
+## Connection events
+
+### connection.update
+
+Connection state changes (connecting, open, close).
+
+```typescript
+'connection.update': Partial<ConnectionState>
+```
+
+<Expandable title="ConnectionState fields">
+  <ResponseField name="connection" type="WAConnectionState">
+    Current connection state: `'close'`, `'open'`, `'connecting'`
+  </ResponseField>
+
+  <ResponseField name="lastDisconnect" type="{ error: Error; date: Date }">
+    Information about last disconnect
+  </ResponseField>
+
+  <ResponseField name="qr" type="string">
+    QR code for pairing (only when using pairing code auth)
+  </ResponseField>
+
+  <ResponseField name="isNewLogin" type="boolean">
+    Whether this is a new login session
+  </ResponseField>
+
+  <ResponseField name="isOnline" type="boolean">
+    Whether the socket is currently online
+  </ResponseField>
+</Expandable>
+
+### creds.update
+
+Authentication credentials updated.
+
+```typescript
+'creds.update': Partial<AuthenticationCreds>
+```
+
+Emitted when credentials change (e.g., new keys, registration). Save these to your auth store.
+
+## Chat events
+
+### chats.upsert
+
+New chats added or existing chats updated.
+
+```typescript
+'chats.upsert': Chat[]
+```
+
+<ResponseField name="id" type="string">
+  Chat JID
+</ResponseField>
+
+<ResponseField name="conversationTimestamp" type="number">
+  Last message timestamp
+</ResponseField>
+
+<ResponseField name="unreadCount" type="number">
+  Number of unread messages
+</ResponseField>
+
+### chats.update
+
+Partial updates to existing chats.
+
+```typescript
+'chats.update': ChatUpdate[]
+```
+
+### chats.delete
+
+Chats deleted.
+
+```typescript
+'chats.delete': string[] // Array of chat JIDs
+```
+
+### chats.lock
+
+Chat lock status changed.
+
+```typescript
+'chats.lock': { id: string; locked: boolean }
+```
+
+## Contact events
+
+### contacts.upsert
+
+New contacts or contact updates.
+
+```typescript
+'contacts.upsert': Contact[]
+```
+
+<ResponseField name="id" type="string">
+  Contact JID
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Contact display name
+</ResponseField>
+
+<ResponseField name="notify" type="string">
+  Push name
+</ResponseField>
+
+### contacts.update
+
+Partial contact updates.
+
+```typescript
+'contacts.update': Partial<Contact>[]
+```
+
+## Message events
+
+### messages.upsert
+
+New messages received or sent.
+
+```typescript
+'messages.upsert': {
+  messages: WAMessage[]
+  type: MessageUpsertType
+  requestId?: string
+}
+```
+
+<ResponseField name="messages" type="WAMessage[]" required>
+  Array of new messages
+</ResponseField>
+
+<ResponseField name="type" type="'notify' | 'append'" required>
+  - `notify`: New message requiring notification
+  - `append`: Add to history silently
+</ResponseField>
+
+<ResponseField name="requestId" type="string">
+  ID if message was received from phone sync
+</ResponseField>
+
+### messages.update
+
+Existing messages updated (delivery status, read receipts, etc.).
+
+```typescript
+'messages.update': WAMessageUpdate[]
+
+type WAMessageUpdate = {
+  key: WAMessageKey
+  update: Partial<WAMessage>
+}
+```
+
+### messages.delete
+
+Messages deleted.
+
+```typescript
+'messages.delete': 
+  | { keys: WAMessageKey[] }
+  | { jid: string; all: true }
+```
+
+Either specific messages deleted or all messages in a chat cleared.
+
+### messages.reaction
+
+Message reactions added or removed.
+
+```typescript
+'messages.reaction': Array<{
+  key: WAMessageKey
+  reaction: proto.IReaction
+}>
+```
+
+<ResponseField name="key" type="WAMessageKey" required>
+  Message being reacted to
+</ResponseField>
+
+<ResponseField name="reaction" type="proto.IReaction" required>
+  Reaction data (emoji or removal)
+</ResponseField>
+
+### messages.media-update
+
+Media retry/update status.
+
+```typescript
+'messages.media-update': Array<{
+  key: WAMessageKey
+  media?: { ciphertext: Uint8Array; iv: Uint8Array }
+  error?: Boom
+}>
+```
+
+### message-receipt.update
+
+User-level read receipts.
+
+```typescript
+'message-receipt.update': MessageUserReceiptUpdate[]
+
+type MessageUserReceiptUpdate = {
+  key: WAMessageKey
+  receipt: MessageUserReceipt
+}
+```
+
+## Presence events
+
+### presence.update
+
+User presence (online/offline, typing, recording).
+
+```typescript
+'presence.update': {
+  id: string
+  presences: { 
+    [participant: string]: PresenceData 
+  }
+}
+```
+
+<ResponseField name="id" type="string" required>
+  Chat JID
+</ResponseField>
+
+<ResponseField name="presences" type="object" required>
+  Map of participant JID to presence data
+</ResponseField>
+
+<Expandable title="PresenceData fields">
+  <ResponseField name="lastKnownPresence" type="WAPresence">
+    `'available'`, `'unavailable'`, `'composing'`, `'recording'`, `'paused'`
+  </ResponseField>
+
+  <ResponseField name="lastSeen" type="number">
+    Unix timestamp of last seen
+  </ResponseField>
+</Expandable>
+
+## Group events
+
+### groups.upsert
+
+New groups or group metadata updates.
+
+```typescript
+'groups.upsert': GroupMetadata[]
+```
+
+### groups.update
+
+Partial group metadata updates.
+
+```typescript
+'groups.update': Partial<GroupMetadata>[]
+```
+
+### group-participants.update
+
+Group participants added, removed, promoted, or demoted.
+
+```typescript
+'group-participants.update': {
+  id: string
+  author: string
+  authorPn?: string
+  participants: GroupParticipant[]
+  action: ParticipantAction
+}
+```
+
+<ResponseField name="id" type="string" required>
+  Group JID
+</ResponseField>
+
+<ResponseField name="author" type="string" required>
+  JID of user who made the change
+</ResponseField>
+
+<ResponseField name="participants" type="GroupParticipant[]" required>
+  Affected participants
+</ResponseField>
+
+<ResponseField name="action" type="ParticipantAction" required>
+  Action: `'add'`, `'remove'`, `'promote'`, `'demote'`
+</ResponseField>
+
+### group.join-request
+
+Group join request.
+
+```typescript
+'group.join-request': {
+  id: string
+  author: string
+  authorPn?: string
+  participant: string
+  participantPn?: string
+  action: RequestJoinAction
+  method: RequestJoinMethod
+}
+```
+
+### group.member-tag.update
+
+Group member label/tag updated.
+
+```typescript
+'group.member-tag.update': {
+  groupId: string
+  participant: string
+  participantAlt?: string
+  label: string
+  messageTimestamp?: number
+}
+```
+
+## Blocklist events
+
+### blocklist.set
+
+Full blocklist synchronized.
+
+```typescript
+'blocklist.set': { blocklist: string[] }
+```
+
+### blocklist.update
+
+Blocklist items added or removed.
+
+```typescript
+'blocklist.update': {
+  blocklist: string[]
+  type: 'add' | 'remove'
+}
+```
+
+## Call events
+
+### call
+
+Incoming call, call accepted, or call rejected.
+
+```typescript
+'call': WACallEvent[]
+```
+
+<ResponseField name="chatId" type="string">
+  JID of caller
+</ResponseField>
+
+<ResponseField name="from" type="string">
+  Caller JID
+</ResponseField>
+
+<ResponseField name="id" type="string">
+  Call ID
+</ResponseField>
+
+<ResponseField name="isGroup" type="boolean">
+  Whether it's a group call
+</ResponseField>
+
+<ResponseField name="isVideo" type="boolean">
+  Whether it's a video call
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Call status: `'offer'`, `'ringing'`, `'accept'`, `'reject'`, `'timeout'`
+</ResponseField>
+
+## Label events
+
+### labels.edit
+
+Label created, edited, or deleted.
+
+```typescript
+'labels.edit': Label
+```
+
+### labels.association
+
+Label associated or disassociated with a chat.
+
+```typescript
+'labels.association': {
+  association: LabelAssociation
+  type: 'add' | 'remove'
+}
+```
+
+## Newsletter events
+
+### newsletter.reaction
+
+Reaction on newsletter message.
+
+```typescript
+'newsletter.reaction': {
+  id: string
+  server_id: string
+  reaction: { 
+    code?: string
+    count?: number
+    removed?: boolean 
+  }
+}
+```
+
+### newsletter.view
+
+Newsletter message view count update.
+
+```typescript
+'newsletter.view': {
+  id: string
+  server_id: string
+  count: number
+}
+```
+
+### newsletter-participants.update
+
+Newsletter participant update.
+
+```typescript
+'newsletter-participants.update': {
+  id: string
+  author: string
+  user: string
+  new_role: string
+  action: string
+}
+```
+
+### newsletter-settings.update
+
+Newsletter settings changed.
+
+```typescript
+'newsletter-settings.update': {
+  id: string
+  update: any
+}
+```
+
+## Settings events
+
+### settings.update
+
+App settings synchronized.
+
+```typescript
+'settings.update':
+  | { setting: 'unarchiveChats'; value: boolean }
+  | { setting: 'locale'; value: string }
+  | { setting: 'disableLinkPreviews'; value: proto.SyncActionValue.IPrivacySettingDisableLinkPreviewsAction }
+  | { setting: 'timeFormat'; value: proto.SyncActionValue.ITimeFormatAction }
+  | { setting: 'privacySettingRelayAllCalls'; value: proto.SyncActionValue.IPrivacySettingRelayAllCalls }
+  | { setting: 'statusPrivacy'; value: proto.SyncActionValue.IStatusPrivacyAction }
+  | { setting: 'notificationActivitySetting'; value: proto.SyncActionValue.NotificationActivitySettingAction.NotificationActivitySetting }
+  | { setting: 'channelsPersonalisedRecommendation'; value: proto.SyncActionValue.IPrivacySettingChannelsPersonalisedRecommendationAction }
+```
+
+## History sync events
+
+### messaging-history.set
+
+Full chat history synchronized from phone.
+
+```typescript
+'messaging-history.set': {
+  chats: Chat[]
+  contacts: Contact[]
+  messages: WAMessage[]
+  lidPnMappings?: LIDMapping[]
+  isLatest?: boolean
+  progress?: number | null
+  syncType?: proto.HistorySync.HistorySyncType | null
+  peerDataRequestSessionId?: string | null
+}
+```
+
+<ResponseField name="chats" type="Chat[]" required>
+  All synced chats
+</ResponseField>
+
+<ResponseField name="contacts" type="Contact[]" required>
+  All synced contacts
+</ResponseField>
+
+<ResponseField name="messages" type="WAMessage[]" required>
+  All synced messages (reverse chronological)
+</ResponseField>
+
+<ResponseField name="isLatest" type="boolean">
+  Whether this is the latest history batch
+</ResponseField>
+
+<ResponseField name="progress" type="number">
+  Sync progress (0-100)
+</ResponseField>
+
+## LID mapping events
+
+### lid-mapping.update
+
+LID to phone number mapping updated.
+
+```typescript
+'lid-mapping.update': LIDMapping
+```
+
+Emitted when WhatsApp's LID (Locally Identifiable Device) mappings are updated.
+
+## Event emitter interface
+
+```typescript
+export interface BaileysEventEmitter {
+  on<T extends keyof BaileysEventMap>(
+    event: T, 
+    listener: (arg: BaileysEventMap[T]) => void
+  ): void
+  
+  off<T extends keyof BaileysEventMap>(
+    event: T, 
+    listener: (arg: BaileysEventMap[T]) => void
+  ): void
+  
+  removeAllListeners<T extends keyof BaileysEventMap>(event: T): void
+  
+  emit<T extends keyof BaileysEventMap>(
+    event: T, 
+    arg: BaileysEventMap[T]
+  ): boolean
+}
+```
+
+## Usage example
+
+```typescript
+import makeWASocket from '@whiskeysockets/baileys'
+
+const sock = makeWASocket({ /* config */ })
+
+// Listen to connection updates
+sock.ev.on('connection.update', (update) => {
+  const { connection, lastDisconnect } = update
+  if(connection === 'close') {
+    console.log('Connection closed')
+  } else if(connection === 'open') {
+    console.log('Connection opened')
+  }
+})
+
+// Listen to new messages
+sock.ev.on('messages.upsert', ({ messages, type }) => {
+  for(const msg of messages) {
+    if(type === 'notify') {
+      console.log('New message:', msg)
+    }
+  }
+})
+
+// Listen to group updates
+sock.ev.on('group-participants.update', ({ id, participants, action }) => {
+  console.log(`Group ${id}: ${action} ${participants.length} participants`)
+})
+```

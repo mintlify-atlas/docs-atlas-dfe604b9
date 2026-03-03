@@ -1,0 +1,181 @@
+---
+title: Privacy settings
+description: Manage privacy settings for last seen, online status, profile picture, read receipts, and more
+---
+
+## Fetch privacy settings
+
+Retrieve your current privacy settings.
+
+```typescript
+const privacySettings = await sock.fetchPrivacySettings(true)
+console.log('privacy settings: ' + privacySettings)
+```
+
+<ParamField path="force" type="boolean" default="false">
+  Force refresh settings from server instead of using cached values
+</ParamField>
+
+## Last seen privacy
+
+Control who can see when you were last online.
+
+```typescript
+const value = 'all' // 'contacts' | 'contact_blacklist' | 'none'
+await sock.updateLastSeenPrivacy(value)
+```
+
+<ParamField path="value" type="WAPrivacyValue" required>
+  Privacy level:
+  - `all` - Everyone can see your last seen
+  - `contacts` - Only your contacts can see
+  - `contact_blacklist` - All contacts except blocked ones
+  - `none` - Nobody can see your last seen
+</ParamField>
+
+## Online privacy
+
+Control who can see when you're online.
+
+```typescript
+const value = 'all' // 'match_last_seen'
+await sock.updateOnlinePrivacy(value)
+```
+
+<ParamField path="value" type="WAPrivacyOnlineValue" required>
+  Privacy level:
+  - `all` - Everyone can see when you're online
+  - `match_last_seen` - Same as your last seen privacy setting
+</ParamField>
+
+## Profile picture privacy
+
+Control who can see your profile picture.
+
+```typescript
+const value = 'all' // 'contacts' | 'contact_blacklist' | 'none'
+await sock.updateProfilePicturePrivacy(value)
+```
+
+<ParamField path="value" type="WAPrivacyValue" required>
+  Privacy level:
+  - `all` - Everyone can see your profile picture
+  - `contacts` - Only your contacts can see
+  - `contact_blacklist` - All contacts except blocked ones
+  - `none` - Nobody can see your profile picture
+</ParamField>
+
+## Status privacy
+
+Control who can see your status updates.
+
+```typescript
+const value = 'all' // 'contacts' | 'contact_blacklist' | 'none'
+await sock.updateStatusPrivacy(value)
+```
+
+<ParamField path="value" type="WAPrivacyValue" required>
+  Privacy level:
+  - `all` - Everyone can see your status
+  - `contacts` - Only your contacts can see
+  - `contact_blacklist` - All contacts except blocked ones
+  - `none` - Nobody can see your status
+</ParamField>
+
+## Read receipts privacy
+
+Control whether to send read receipts (blue checkmarks).
+
+```typescript
+const value = 'all' // 'none'
+await sock.updateReadReceiptsPrivacy(value)
+```
+
+<ParamField path="value" type="WAReadReceiptsValue" required>
+  Privacy level:
+  - `all` - Send read receipts
+  - `none` - Don't send read receipts
+</ParamField>
+
+<Warning>
+  If you disable read receipts, you also won't be able to see when others read your messages.
+</Warning>
+
+## Groups add privacy
+
+Control who can add you to groups.
+
+```typescript
+const value = 'all' // 'contacts' | 'contact_blacklist'
+await sock.updateGroupsAddPrivacy(value)
+```
+
+<ParamField path="value" type="WAPrivacyGroupAddValue" required>
+  Privacy level:
+  - `all` - Everyone can add you to groups
+  - `contacts` - Only your contacts can add you
+  - `contact_blacklist` - All contacts except blocked ones can add you
+</ParamField>
+
+## Default disappearing mode
+
+Set the default timer for disappearing messages in new chats.
+
+```typescript
+const ephemeral = 86400
+await sock.updateDefaultDisappearingMode(ephemeral)
+```
+
+<ParamField path="duration" type="number" required>
+  Duration in seconds for messages to disappear:
+  - `0` - Disable (messages don't disappear)
+  - `86400` - 24 hours
+  - `604800` - 7 days
+  - `7776000` - 90 days
+</ParamField>
+
+| Time   | Seconds   |
+|--------|----------|
+| Remove | 0        |
+| 24h    | 86,400   |
+| 7d     | 604,800  |
+| 90d    | 7,776,000|
+
+## Block user
+
+Block a user to prevent them from messaging you.
+
+```typescript
+await sock.updateBlockStatus(jid, 'block') // Block user
+```
+
+<ParamField path="jid" type="string" required>
+  The JID of the user to block
+</ParamField>
+
+<ParamField path="action" type="'block' | 'unblock'" required>
+  Action to perform:
+  - `block` - Block the user
+  - `unblock` - Unblock the user
+</ParamField>
+
+## Unblock user
+
+Unblock a previously blocked user.
+
+```typescript
+await sock.updateBlockStatus(jid, 'unblock') // Unblock user
+```
+
+## Fetch blocklist
+
+Retrieve the list of all blocked users.
+
+```typescript
+const response = await sock.fetchBlocklist()
+console.log(response)
+```
+
+<Info>
+  Returns an array of JIDs for all blocked users.
+</Info>

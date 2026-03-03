@@ -1,0 +1,199 @@
+---
+title: Sending messages
+description: Overview of the sendMessage API and message generation options
+---
+
+Baileys provides a unified `sendMessage` function to send all types of messages. The function handles encryption, media upload, and delivery to all recipient devices automatically.
+
+## Basic usage
+
+All messages are sent using the `sendMessage` method:
+
+```typescript
+const jid: string
+const content: AnyMessageContent
+const options: MiscMessageGenerationOptions
+
+await sock.sendMessage(jid, content, options)
+```
+
+### Parameters
+
+<ParamField path="jid" type="string" required>
+  The recipient's JID (e.g., `'1234567890@s.whatsapp.net'` for individual chats or `'123456789@g.us'` for groups)
+</ParamField>
+
+<ParamField path="content" type="AnyMessageContent" required>
+  The message content object. See [AnyMessageContent](https://baileys.whiskeysockets.io/types/AnyMessageContent.html) for all supported message types.
+</ParamField>
+
+<ParamField path="options" type="MiscMessageGenerationOptions">
+  Optional configuration for message generation. See [MiscMessageGenerationOptions](https://baileys.whiskeysockets.io/types/MiscMessageGenerationOptions.html) for all available options.
+</ParamField>
+
+## Message content types
+
+The `AnyMessageContent` type supports various message formats:
+
+- **Text messages**: Simple text, with support for mentions, quotes, and formatting
+- **Media messages**: Images, videos, audio, documents, stickers
+- **Location messages**: Share geographical coordinates
+- **Contact messages**: Share vCard contacts
+- **Poll messages**: Create interactive polls
+- **Reaction messages**: React to existing messages
+- **Forward messages**: Forward existing messages
+
+See the specific pages for detailed examples:
+- [Text messages](/messaging/text-messages)
+- [Media messages](/messaging/media-messages)
+- [Message modification](/messaging/message-modification)
+
+## Message generation options
+
+The `MiscMessageGenerationOptions` parameter allows you to customize message behavior:
+
+### Quote a message
+
+Reply to or quote any message by passing the original message object:
+
+```typescript
+await sock.sendMessage(jid, { text: 'This is a reply' }, { quoted: originalMessage })
+```
+
+<Note>
+  The `quoted` option works with all message types, not just text messages.
+</Note>
+
+### Ephemeral messages
+
+Send messages that disappear after a set duration:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  { text: 'This message will disappear' },
+  { ephemeralExpiration: 86400 } // 24 hours in seconds
+)
+```
+
+### Cached group metadata
+
+Optimize group message sending by using cached metadata:
+
+```typescript
+await sock.sendMessage(
+  groupJid,
+  { text: 'Hello group!' },
+  { useCachedGroupMetadata: true }
+)
+```
+
+### Status (broadcast) messages
+
+When sending status/broadcast messages, specify the recipient list:
+
+```typescript
+await sock.sendMessage(
+  'status@broadcast',
+  { text: 'My status update' },
+  { 
+    statusJidList: [
+      '1234567890@s.whatsapp.net',
+      '0987654321@s.whatsapp.net'
+    ]
+  }
+)
+```
+
+## Return value
+
+The `sendMessage` function returns a `WAMessage` object containing:
+
+```typescript
+const message = await sock.sendMessage(jid, { text: 'Hello' })
+
+console.log(message.key.id) // Message ID
+console.log(message.key.fromMe) // true
+console.log(message.messageTimestamp) // Unix timestamp
+```
+
+## Error handling
+
+<CodeGroup>
+
+```typescript Basic error handling
+try {
+  await sock.sendMessage(jid, { text: 'Hello' })
+} catch (error) {
+  console.error('Failed to send message:', error)
+}
+```
+
+```typescript Check delivery status
+const msg = await sock.sendMessage(jid, { text: 'Hello' })
+
+sock.ev.on('messages.update', ([update]) => {
+  if (update.key.id === msg.key.id) {
+    console.log('Message status:', update.update.status)
+    // Status values: PENDING, SERVER_ACK, DELIVERY_ACK, READ, PLAYED
+  }
+})
+```
+
+</CodeGroup>
+
+## Advanced features
+
+### Custom message ID
+
+Generate your own message ID:
+
+```typescript
+import { generateMessageIDV2 } from '@whiskeysockets/baileys'
+
+const customId = generateMessageIDV2(sock.user?.id)
+await sock.sendMessage(jid, { text: 'Hello' }, { messageId: customId })
+```
+
+### Patch messages before sending
+
+Modify messages before they're sent (configured at socket level):
+
+```typescript
+const sock = makeWASocket({
+  patchMessageBeforeSending: async (message, recipientJids) => {
+    // Modify the message here
+    return message
+  }
+})
+```
+
+## Best practices
+
+<Tip>
+  - Always handle errors when sending messages
+  - Use `useCachedGroupMetadata: true` for better performance in groups
+  - Implement proper rate limiting to avoid being blocked by WhatsApp
+  - Store message IDs to track delivery and read status
+</Tip>
+
+<Warning>
+  Sending messages too quickly may result in temporary account restrictions. Implement appropriate delays between messages.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Text messages" icon="message" href="/messaging/text-messages">
+    Learn about text formatting, mentions, and links
+  </Card>
+  <Card title="Media messages" icon="image" href="/messaging/media-messages">
+    Send images, videos, audio, and documents
+  </Card>
+  <Card title="Receiving messages" icon="download" href="/messaging/receiving-messages">
+    Handle incoming messages and events
+  </Card>
+  <Card title="Message modification" icon="edit" href="/messaging/message-modification">
+    Edit, delete, and react to messages
+  </Card>
+</CardGroup>

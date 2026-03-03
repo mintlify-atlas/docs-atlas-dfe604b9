@@ -1,0 +1,333 @@
+---
+title: Custom functionality
+description: Extend Baileys with custom features without forking the project
+---
+
+Baileys is designed with extensibility in mind. Instead of forking the project and modifying its internals, you can add custom functionality by hooking into the WhatsApp protocol directly.
+
+## Why extend instead of fork?
+
+Extending Baileys provides several advantages:
+
+- **Easier updates** - Pull in new Baileys versions without merge conflicts
+- **Maintainability** - Keep your custom code separate from the core library
+- **Modularity** - Build reusable extensions that can be shared
+- **Stability** - Avoid breaking core functionality
+
+## Understanding the WhatsApp protocol
+
+To build custom functionality, you need to understand how WhatsApp communicates with clients.
+
+### Recommended learning resources
+
+<Tip>
+  If you want to learn the WhatsApp protocol in depth, study:
+  - **Libsignal Protocol** - End-to-end encryption framework
+  - **Noise Protocol** - Cryptographic handshake patterns
+</Tip>
+
+### Binary node structure
+
+WhatsApp messages use a binary format called BinaryNode. Each node has three components:
+
+```typescript
+interface BinaryNode {
+  tag: string        // Message type (e.g., 'message', 'iq', 'ib')
+  attrs: Object      // Metadata as key-value pairs
+  content: any       // Actual message data or nested nodes
+}
+```
+
+## Enable debug logging
+
+Before building custom functionality, enable debug logging to see all WhatsApp protocol messages:
+
+```typescript
+import P from 'pino'
+import makeWASocket from '@whiskeysockets/baileys'
+
+const sock = makeWASocket({
+  logger: P({ level: 'debug' }),
+})
+```
+
+<Note>
+  Setting the log level to `'debug'` will show all unhandled messages from WhatsApp in your console, helping you discover new protocol features.
+</Note>
+
+## Example: Track phone battery
+
+Let's build a feature to track your phone's battery percentage.
+
+### Step 1: Enable debug logging
+
+First, enable debug logging and observe the console:
+
+```typescript
+const sock = makeWASocket({
+  logger: P({ level: 'debug' }),
+})
+```
+
+### Step 2: Identify the message
+
+You'll see messages like this in the console when your phone's battery changes:
+
+```json
+{
+  "level": 10,
+  "fromMe": false,
+  "frame": {
+    "tag": "ib",
+    "attrs": {
+      "from": "@s.whatsapp.net"
+    },
+    "content": [
+      {
+        "tag": "edge_routing",
+        "attrs": {},
+        "content": [
+          {
+            "tag": "routing_info",
+            "attrs": {},
+            "content": {
+              "type": "Buffer",
+              "data": [8,2,8,5]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "msg": "communication"
+}
+```
+
+### Step 3: Register a WebSocket callback
+
+Use the `sock.ws.on()` method to listen for specific messages. See [WebSocket events](/advanced/websocket-events) for details.
+
+```typescript
+// Listen for edge_routing messages
+sock.ws.on('CB:edge_routing', (node: BinaryNode) => {
+  console.log('Received edge_routing message:', node)
+  // Process the battery data
+})
+```
+
+## Example: Custom message handler
+
+Here's a more practical example - adding a custom handler for a specific message type:
+
+```typescript
+import makeWASocket, { BinaryNode } from '@whiskeysockets/baileys'
+import P from 'pino'
+
+const sock = makeWASocket({
+  logger: P({ level: 'debug' }),
+})
+
+// Custom handler for presence updates
+sock.ws.on('CB:presence', (node: BinaryNode) => {
+  const from = node.attrs.from
+  const type = node.attrs.type
+  
+  console.log(`${from} is ${type}`)
+  
+  // Custom logic
+  if (type === 'available') {
+    console.log(`${from} came online!`)
+  } else if (type === 'unavailable') {
+    console.log(`${from} went offline!`)
+  }
+})
+```
+
+## Building reusable extensions
+
+Create modular extensions that can be easily shared:
+
+```typescript
+// battery-tracker.ts
+import { BinaryNode } from '@whiskeysockets/baileys'
+
+export function enableBatteryTracking(sock: any) {
+  sock.ws.on('CB:ib,,battery', (node: BinaryNode) => {
+    const batteryNode = node.content.find(
+      (n: any) => n.tag === 'battery'
+    )
+    
+    if (batteryNode) {
+      const level = batteryNode.attrs.value
+      console.log(`Phone battery: ${level}%`)
+      
+      // Emit custom event
+      sock.ev.emit('battery.update', { level: parseInt(level) })
+    }
+  })
+  
+  return sock
+}
+```
+
+Then use it in your application:
+
+```typescript
+import makeWASocket from '@whiskeysockets/baileys'
+import { enableBatteryTracking } from './battery-tracker'
+
+const sock = makeWASocket({ /* config */ })
+enableBatteryTracking(sock)
+
+// Listen for battery updates
+sock.ev.on('battery.update', ({ level }) => {
+  console.log(`Battery level: ${level}%`)
+  
+  if (level < 20) {
+    console.warn('Phone battery is low!')
+  }
+})
+```
+
+## Exploring protocol messages
+
+### Using trace logging
+
+For even more detailed logs, use `'trace'` level:
+
+```typescript
+import P from 'pino'
+
+const logger = P({
+  level: 'trace',
+  transport: {
+    target: 'pino-pretty',
+    options: { colorize: true }
+  }
+})
+
+const sock = makeWASocket({ logger })
+```
+
+### Understanding message flow
+
+<Tip>
+  Examine the `onMessageReceived` function in `socket.ts` to understand how WebSocket events are fired and processed.
+</Tip>
+
+The message processing flow:
+
+1. **Receive** - Raw data arrives via WebSocket
+2. **Decode** - Noise protocol decrypts the frame
+3. **Parse** - Binary data converts to BinaryNode
+4. **Emit** - Events fire based on tag and attributes
+5. **Handle** - Your callbacks process the message
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Use specific event patterns">
+    Register callbacks for specific message patterns rather than catching everything:
+    
+    ```typescript
+    // Good - specific
+    sock.ws.on('CB:presence,type:available', callback)
+    
+    // Avoid - too broad
+    sock.ws.on('CB:presence', callback)
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle errors gracefully">
+    Always wrap custom handlers in try-catch blocks:
+    
+    ```typescript
+    sock.ws.on('CB:message', (node: BinaryNode) => {
+      try {
+        // Your custom logic
+      } catch (error) {
+        console.error('Error in custom handler:', error)
+      }
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Clean up listeners">
+    Remove event listeners when they're no longer needed:
+    
+    ```typescript
+    const handler = (node: BinaryNode) => {
+      // Handle message
+    }
+    
+    sock.ws.on('CB:message', handler)
+    
+    // Later, when done:
+    sock.ws.off('CB:message', handler)
+    ```
+  </Accordion>
+  
+  <Accordion title="Document protocol discoveries">
+    When you discover new protocol features, document them for the community:
+    
+    ```typescript
+    /**
+     * Battery status message structure:
+     * - tag: 'ib'
+     * - content[0].tag: 'battery'
+     * - content[0].attrs.value: percentage (0-100)
+     * - content[0].attrs.live: 'true' if charging
+     */
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Debugging tips
+
+<CodeGroup>
+```typescript Inspect binary nodes
+import { binaryNodeToString } from '@whiskeysockets/baileys'
+
+sock.ws.on('CB:ib', (node: BinaryNode) => {
+  // Convert to readable XML-like format
+  console.log(binaryNodeToString(node))
+})
+```
+
+```typescript Log all unhandled messages
+const sock = makeWASocket({
+  logger: P({ level: 'debug' }),
+})
+
+// Baileys automatically logs unhandled messages at debug level
+// Look for messages with { unhandled: true }
+```
+
+```typescript Save logs to file
+import P from 'pino'
+
+const logger = P({
+  level: 'trace',
+  transport: {
+    targets: [
+      {
+        target: 'pino-pretty',
+        options: { colorize: true },
+        level: 'info',
+      },
+      {
+        target: 'pino/file',
+        options: { destination: './wa-logs.txt' },
+        level: 'trace',
+      },
+    ],
+  },
+})
+```
+</CodeGroup>
+
+## Next steps
+
+- Learn about [WebSocket event patterns](/advanced/websocket-events)
+- Explore [debugging techniques](/advanced/debugging)
+- Study the [socket.ts source code](https://github.com/WhiskeySockets/Baileys/blob/master/src/Socket/socket.ts)

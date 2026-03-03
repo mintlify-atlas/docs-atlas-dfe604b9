@@ -1,0 +1,75 @@
+---
+title: Profile management
+description: Update your WhatsApp profile name, status message, and profile picture
+---
+
+## Update profile status
+
+Change your WhatsApp status message (the text that appears below your name).
+
+```typescript
+await sock.updateProfileStatus('Hello World!')
+```
+
+<ParamField path="status" type="string" required>
+  The new status message to display on your profile
+</ParamField>
+
+## Update profile name
+
+Change your display name on WhatsApp.
+
+```typescript
+await sock.updateProfileName('My name')
+```
+
+<ParamField path="name" type="string" required>
+  The new name to display on your profile
+</ParamField>
+
+## Update profile picture
+
+Change your display picture or a group's display picture.
+
+```typescript
+await sock.updateProfilePicture(jid, { url: './new-profile-picture.jpeg' })
+```
+
+<ParamField path="jid" type="string" required>
+  The JID of the user or group whose picture to update
+</ParamField>
+
+<ParamField path="content" type="WAMediaUpload" required>
+  The image to use as the new profile picture. Can be:
+  - `{ url: string }` - URL or file path to the image
+  - `{ stream: Stream }` - Readable stream of the image
+  - `Buffer` - Raw image data
+</ParamField>
+
+<ParamField path="dimensions" type="object">
+  Optional dimensions for the image
+  <Accordion title="Properties">
+    <ParamField path="width" type="number">
+      Image width in pixels
+    </ParamField>
+    <ParamField path="height" type="number">
+      Image height in pixels
+    </ParamField>
+  </Accordion>
+</ParamField>
+
+<Note>
+  Like media messages, you can pass `{ stream: Stream }` or `{ url: Url }` or `Buffer` directly. See [WAMediaUpload](https://baileys.whiskeysockets.io/types/WAMediaUpload.html) for more details.
+</Note>
+
+## Remove profile picture
+
+Remove your display picture or a group's display picture.
+
+```typescript
+await sock.removeProfilePicture(jid)
+```
+
+<ParamField path="jid" type="string" required>
+  The JID of the user or group whose picture to remove
+</ParamField>

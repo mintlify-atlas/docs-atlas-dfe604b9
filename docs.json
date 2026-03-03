@@ -1,122 +1,114 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Baileys",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#25D366",
+    "light": "#34E877",
+    "dark": "#1EAA52"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/WhiskeySockets/Baileys"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/WhiskeySockets/Baileys"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "core/authentication",
+              "core/connection",
+              "core/events",
+              "core/data-store",
+              "core/whatsapp-ids"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Messaging",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "messaging/sending-messages",
+              "messaging/text-messages",
+              "messaging/media-messages",
+              "messaging/receiving-messages",
+              "messaging/message-modification"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Groups",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "groups/overview",
+              "groups/management",
+              "groups/participants",
+              "groups/settings"
+            ]
+          },
+          {
+            "group": "User Operations",
+            "pages": [
+              "user/profile",
+              "user/queries",
+              "user/privacy",
+              "user/presence"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/broadcasts-stories",
+              "advanced/custom-functionality",
+              "advanced/websocket-events",
+              "advanced/debugging"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core",
             "pages": [
-              "api-reference/introduction"
+              "api/make-wa-socket",
+              "api/socket-config",
+              "api/auth-state"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Types",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/types/message-types",
+              "api/types/event-types",
+              "api/types/socket-types"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utilities/auth-utils",
+              "api/utilities/message-utils",
+              "api/utilities/media-utils"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

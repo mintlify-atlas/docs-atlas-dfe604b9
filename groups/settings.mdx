@@ -1,0 +1,330 @@
+---
+title: Group settings
+description: Configuring group settings including announcements, ephemeral messages, and member permissions
+---
+
+Group admins can configure various settings to control how the group operates and who can perform certain actions.
+
+## Announcement mode
+
+Announcement mode restricts who can send messages in the group.
+
+### Enable announcement mode
+
+Only allow admins to send messages:
+
+```ts
+// only allow admins to send messages
+await sock.groupSettingUpdate(jid, 'announcement')
+```
+
+When announcement mode is enabled:
+- Only group admins can send messages
+- Regular members can only read messages
+- Useful for broadcast groups, official announcements, or communities
+
+### Disable announcement mode
+
+Allow everyone to send messages:
+
+```ts
+// allow everyone to send messages
+await sock.groupSettingUpdate(jid, 'not_announcement')
+```
+
+<Note>
+  Announcement mode is reflected in the group metadata as the `announce` boolean property.
+</Note>
+
+## Group info restrictions
+
+Control who can modify group information like display picture, subject, and description.
+
+### Lock group info
+
+Only allow admins to modify group settings:
+
+```ts
+// only allow admins to modify the group's settings
+await sock.groupSettingUpdate(jid, 'locked')
+```
+
+When locked:
+- Only admins can change the group name
+- Only admins can change the group description
+- Only admins can change the group display picture
+- Regular members can only view this information
+
+### Unlock group info
+
+Allow everyone to modify group settings:
+
+```ts
+// allow everyone to modify the group's settings -- like display picture etc.
+await sock.groupSettingUpdate(jid, 'unlocked')
+```
+
+<Warning>
+  Unlocking group info allows any member to change the group name, description, and picture. Use this setting carefully in large groups.
+</Warning>
+
+## Setting update function
+
+All group settings are updated using the same function:
+
+```ts
+await sock.groupSettingUpdate(jid, setting)
+```
+
+<ParamField path="jid" type="string" required>
+  The group JID
+</ParamField>
+
+<ParamField path="setting" type="string" required>
+  The setting to apply: `'announcement'`, `'not_announcement'`, `'locked'`, or `'unlocked'`
+</ParamField>
+
+## Ephemeral messages
+
+Ephemeral messages automatically disappear after a set period. This is useful for temporary conversations or privacy-sensitive groups.
+
+### Enable ephemeral messages
+
+```ts
+await sock.groupToggleEphemeral(jid, 86400)
+```
+
+### Ephemeral durations
+
+| Time | Seconds | Description |
+|------|---------|-------------|
+| Remove | 0 | Disable ephemeral messages |
+| 24 hours | 86400 | Messages disappear after 24 hours |
+| 7 days | 604800 | Messages disappear after 7 days |
+| 90 days | 7776000 | Messages disappear after 90 days |
+
+### Examples
+
+<Accordion title="Enable 24-hour ephemeral messages">
+  ```ts
+  await sock.groupToggleEphemeral(jid, 86400)
+  ```
+</Accordion>
+
+<Accordion title="Enable 7-day ephemeral messages">
+  ```ts
+  await sock.groupToggleEphemeral(jid, 604800)
+  ```
+</Accordion>
+
+<Accordion title="Enable 90-day ephemeral messages">
+  ```ts
+  await sock.groupToggleEphemeral(jid, 7776000)
+  ```
+</Accordion>
+
+<Accordion title="Disable ephemeral messages">
+  ```ts
+  await sock.groupToggleEphemeral(jid, 0)
+  ```
+</Accordion>
+
+<Note>
+  The ephemeral setting is stored in the group metadata as `ephemeralDuration` (in seconds). A value of `undefined` means ephemeral messages are disabled.
+</Note>
+
+## Member add mode
+
+Control who can add new participants to the group.
+
+### Allow all members to add
+
+```ts
+await sock.groupMemberAddMode(
+    jid,
+    'all_member_add'
+)
+```
+
+When set to `'all_member_add'`:
+- Any group member can add new participants
+- Useful for open, collaborative groups
+- Reduces admin workload
+
+### Restrict adding to admins only
+
+```ts
+await sock.groupMemberAddMode(
+    jid,
+    'admin_add'
+)
+```
+
+When set to `'admin_add'`:
+- Only group admins can add new participants
+- Regular members cannot add anyone
+- Provides better control over group membership
+
+<ParamField path="jid" type="string" required>
+  The group JID
+</ParamField>
+
+<ParamField path="mode" type="string" required>
+  Either `'admin_add'` or `'all_member_add'`
+</ParamField>
+
+<Note>
+  The member add mode is reflected in the group metadata as the `memberAddMode` boolean property (`true` for all members, `false` for admins only).
+</Note>
+
+## Join approval mode
+
+Control whether users who click an invite link can join immediately or need admin approval.
+
+### Enable join approval
+
+```ts
+await sock.groupJoinApprovalMode(jid, 'on')
+```
+
+When enabled:
+- Users who click an invite link submit a join request
+- Admins must approve or reject each request
+- Provides better control over who joins
+- See [join requests](/groups/management#join-requests) for handling requests
+
+### Disable join approval
+
+```ts
+await sock.groupJoinApprovalMode(jid, 'off')
+```
+
+When disabled:
+- Users who click an invite link join immediately
+- No admin approval required
+- Faster group joining process
+
+<ParamField path="jid" type="string" required>
+  The group JID
+</ParamField>
+
+<ParamField path="mode" type="string" required>
+  Either `'on'` or `'off'`
+</ParamField>
+
+<Note>
+  The join approval mode is reflected in the group metadata as the `joinApprovalMode` boolean property.
+</Note>
+
+## Common settings configurations
+
+Here are some common group setting configurations for different use cases:
+
+<Accordion title="Public community group">
+  ```ts
+  // Allow everyone to send messages
+  await sock.groupSettingUpdate(jid, 'not_announcement')
+  
+  // Allow anyone to change group info
+  await sock.groupSettingUpdate(jid, 'unlocked')
+  
+  // Let anyone add members
+  await sock.groupMemberAddMode(jid, 'all_member_add')
+  
+  // Auto-accept anyone with invite link
+  await sock.groupJoinApprovalMode(jid, 'off')
+  ```
+</Accordion>
+
+<Accordion title="Announcement channel">
+  ```ts
+  // Only admins can send messages
+  await sock.groupSettingUpdate(jid, 'announcement')
+  
+  // Only admins can change group info
+  await sock.groupSettingUpdate(jid, 'locked')
+  
+  // Only admins can add members
+  await sock.groupMemberAddMode(jid, 'admin_add')
+  
+  // Require admin approval to join
+  await sock.groupJoinApprovalMode(jid, 'on')
+  ```
+</Accordion>
+
+<Accordion title="Private group with ephemeral messages">
+  ```ts
+  // Everyone can send messages
+  await sock.groupSettingUpdate(jid, 'not_announcement')
+  
+  // Only admins can change group info
+  await sock.groupSettingUpdate(jid, 'locked')
+  
+  // Only admins can add members
+  await sock.groupMemberAddMode(jid, 'admin_add')
+  
+  // Require admin approval to join
+  await sock.groupJoinApprovalMode(jid, 'on')
+  
+  // Enable 7-day ephemeral messages
+  await sock.groupToggleEphemeral(jid, 604800)
+  ```
+</Accordion>
+
+<Accordion title="Semi-moderated group">
+  ```ts
+  // Everyone can send messages
+  await sock.groupSettingUpdate(jid, 'not_announcement')
+  
+  // Only admins can change group info
+  await sock.groupSettingUpdate(jid, 'locked')
+  
+  // Everyone can add members
+  await sock.groupMemberAddMode(jid, 'all_member_add')
+  
+  // Auto-accept anyone with invite link
+  await sock.groupJoinApprovalMode(jid, 'off')
+  ```
+</Accordion>
+
+## Reading current settings
+
+You can check the current settings by fetching group metadata:
+
+```ts
+const metadata = await sock.groupMetadata(jid)
+
+console.log('Announcement mode:', metadata.announce)
+console.log('Info restricted:', metadata.restrict)
+console.log('Ephemeral duration:', metadata.ephemeralDuration)
+console.log('All members can add:', metadata.memberAddMode)
+console.log('Join approval required:', metadata.joinApprovalMode)
+```
+
+<Warning>
+  All group settings operations require admin privileges. Attempting to change settings as a regular member will fail.
+</Warning>
+
+## Best practices
+
+<Steps>
+  <Step title="Consider your group's purpose">
+    Choose settings that match your group's purpose (public community, private chat, announcement channel, etc.)
+  </Step>
+  
+  <Step title="Start restrictive, then relax">
+    It's easier to relax restrictions than to impose them after the group has grown
+  </Step>
+  
+  <Step title="Document group rules">
+    Use the group description to explain the settings and expectations to members
+  </Step>
+  
+  <Step title="Review settings periodically">
+    As your group evolves, review and adjust settings to match the current needs
+  </Step>
+  
+  <Step title="Communicate changes">
+    When changing settings, send a message explaining the change and the reason
+  </Step>
+</Steps>

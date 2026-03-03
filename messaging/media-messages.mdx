@@ -1,0 +1,442 @@
+---
+title: Media messages
+description: Send images, videos, audio, documents, stickers, and GIFs with Baileys
+---
+
+Baileys makes sending media messages efficient by supporting multiple input formats: Buffers, URLs, or Streams. Media is automatically encrypted and uploaded to WhatsApp servers.
+
+## Media upload formats
+
+Baileys accepts media in three formats:
+
+<CodeGroup>
+
+```typescript Buffer
+import fs from 'fs'
+
+await sock.sendMessage(
+  jid,
+  {
+    image: fs.readFileSync('./image.jpg'),
+    caption: 'Image from buffer'
+  }
+)
+```
+
+```typescript URL
+await sock.sendMessage(
+  jid,
+  {
+    image: { url: './media/image.jpg' },
+    caption: 'Image from URL'
+  }
+)
+```
+
+```typescript Stream
+import { createReadStream } from 'fs'
+
+await sock.sendMessage(
+  jid,
+  {
+    image: { stream: createReadStream('./image.jpg') },
+    caption: 'Image from stream'
+  }
+)
+```
+
+</CodeGroup>
+
+<Tip>
+  Use Streams or URLs instead of Buffers to save memory. Baileys encrypts media as a readable stream, never loading the entire file into memory.
+</Tip>
+
+## Image messages
+
+Send images with optional captions:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    image: { url: './media/photo.jpg' },
+    caption: 'Beautiful sunset 🌅'
+  }
+)
+```
+
+### Image with mentions
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    image: { url: './photo.jpg' },
+    caption: 'Check out this photo @12345678901!',
+    mentions: ['12345678901@s.whatsapp.net']
+  }
+)
+```
+
+## Video messages
+
+Send video files:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    video: { url: './media/video.mp4' },
+    caption: 'My video',
+    ptv: false // Set to true for video notes (round video messages)
+  }
+)
+```
+
+### Video notes (PTV)
+
+Send round video messages:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    video: { url: './video.mp4' },
+    ptv: true, // Enables video note format
+    caption: 'Video note'
+  }
+)
+```
+
+## GIF messages
+
+WhatsApp doesn't support `.gif` files natively. Send GIFs as MP4 videos with the `gifPlayback` flag:
+
+```typescript
+import fs from 'fs'
+
+await sock.sendMessage(
+  jid,
+  {
+    video: fs.readFileSync('./media/animation.mp4'),
+    caption: 'Funny GIF',
+    gifPlayback: true // Required for GIF playback
+  }
+)
+```
+
+<Note>
+  Convert your `.gif` files to `.mp4` format before sending. The `gifPlayback` flag tells WhatsApp to loop the video like a GIF.
+</Note>
+
+## Audio messages
+
+Send audio files or voice messages:
+
+### Regular audio
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    audio: { url: './media/song.mp3' },
+    mimetype: 'audio/mp4'
+  }
+)
+```
+
+### Voice messages (PTT)
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    audio: { url: './voice.ogg' },
+    mimetype: 'audio/ogg; codecs=opus',
+    ptt: true // Push-to-talk (voice message)
+  }
+)
+```
+
+### Audio format requirements
+
+For maximum compatibility across devices, convert audio to Opus codec:
+
+```bash
+ffmpeg -i input.mp4 -avoid_negative_ts make_zero -ac 1 output.ogg
+```
+
+Required flags:
+- `codec: libopus` - Opus codec in OGG container
+- `ac: 1` - Single audio channel (mono)
+- `avoid_negative_ts: make_zero` - Avoid timestamp issues
+
+<Warning>
+  Audio files not encoded properly may fail to play on some devices. Always use the recommended encoding settings.
+</Warning>
+
+## Document messages
+
+Send files as documents:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    document: { url: './document.pdf' },
+    mimetype: 'application/pdf',
+    fileName: 'Report.pdf'
+  }
+)
+```
+
+### Documents with captions
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    document: { url: './file.docx' },
+    mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    fileName: 'Proposal.docx',
+    caption: 'Here is the proposal document'
+  }
+)
+```
+
+## Sticker messages
+
+Send stickers (WEBP format):
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    sticker: { url: './sticker.webp' }
+  }
+)
+```
+
+<Note>
+  Stickers must be in WEBP format. Convert images using tools like `sharp` or `imagemagick`.
+</Note>
+
+## View once messages
+
+Send media that can only be viewed once:
+
+<CodeGroup>
+
+```typescript Image
+await sock.sendMessage(
+  jid,
+  {
+    image: { url: './photo.jpg' },
+    caption: 'View once photo',
+    viewOnce: true
+  }
+)
+```
+
+```typescript Video
+await sock.sendMessage(
+  jid,
+  {
+    video: { url: './video.mp4' },
+    caption: 'View once video',
+    viewOnce: true
+  }
+)
+```
+
+```typescript Audio
+await sock.sendMessage(
+  jid,
+  {
+    audio: { url: './audio.ogg' },
+    viewOnce: true,
+    ptt: true
+  }
+)
+```
+
+</CodeGroup>
+
+## Thumbnails
+
+Baileys can automatically generate thumbnails for media messages.
+
+### Image and sticker thumbnails
+
+Install `jimp` or `sharp` for automatic thumbnail generation:
+
+```bash
+npm install jimp
+# or
+npm install sharp
+```
+
+Thumbnails will be generated automatically when sending images and stickers.
+
+### Video thumbnails
+
+Install `ffmpeg` on your system for automatic video thumbnail generation:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install ffmpeg
+
+# macOS
+brew install ffmpeg
+
+# Windows
+choco install ffmpeg
+```
+
+### Custom thumbnails
+
+Provide a custom thumbnail:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    video: { url: './video.mp4' },
+    caption: 'Video with custom thumbnail',
+    jpegThumbnail: thumbnailBuffer // Buffer containing JPEG thumbnail
+  }
+)
+```
+
+## Downloading media
+
+Download media from received messages:
+
+```typescript
+import { createWriteStream } from 'fs'
+import { downloadMediaMessage } from '@whiskeysockets/baileys'
+
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (!m.message) return
+  
+  const messageType = Object.keys(m.message)[0]
+  
+  // Check if it's an image
+  if (messageType === 'imageMessage') {
+    // Download as stream
+    const stream = await downloadMediaMessage(
+      m,
+      'stream',
+      {},
+      {
+        logger,
+        reuploadRequest: sock.updateMediaMessage
+      }
+    )
+    
+    // Save to file
+    const writeStream = createWriteStream('./downloaded-image.jpeg')
+    stream.pipe(writeStream)
+  }
+})
+```
+
+### Download as buffer
+
+```typescript
+const buffer = await downloadMediaMessage(
+  m,
+  'buffer',
+  {},
+  {
+    logger,
+    reuploadRequest: sock.updateMediaMessage
+  }
+)
+
+// Use the buffer
+fs.writeFileSync('./media.jpg', buffer)
+```
+
+## Re-upload media
+
+WhatsApp automatically removes old media from servers. Re-upload media when needed:
+
+```typescript
+await sock.updateMediaMessage(message)
+```
+
+<Note>
+  The `reuploadRequest` option in `downloadMediaMessage` automatically handles re-upload when media is unavailable.
+</Note>
+
+## Streaming media
+
+For large files, use streams to avoid memory issues:
+
+```typescript
+import { createReadStream } from 'fs'
+
+const stream = createReadStream('./large-video.mp4')
+
+await sock.sendMessage(
+  jid,
+  {
+    video: { stream },
+    caption: 'Large video file'
+  }
+)
+```
+
+<Tip>
+  Streaming is especially important for large media files (> 10MB). Baileys encrypts the stream on-the-fly without loading the entire file into memory.
+</Tip>
+
+## MIME types reference
+
+Common MIME types for media messages:
+
+| Media Type | MIME Type |
+|------------|----------|
+| JPEG Image | `image/jpeg` |
+| PNG Image | `image/png` |
+| MP4 Video | `video/mp4` |
+| MP3 Audio | `audio/mpeg` |
+| OGG Audio | `audio/ogg; codecs=opus` |
+| PDF Document | `application/pdf` |
+| WEBP Sticker | `image/webp` |
+
+## Best practices
+
+<Tip>
+  - Use streams or URLs for files larger than 5MB
+  - Always set the correct MIME type for documents
+  - Install thumbnail generators (`jimp`/`sharp` and `ffmpeg`) for better UX
+  - Compress large media files before sending to reduce upload time
+  - Use `viewOnce` for sensitive media that should not be saved
+</Tip>
+
+<Warning>
+  - Maximum file size is approximately 64MB for media messages
+  - Audio files must be properly encoded to work on all devices
+  - GIF files must be converted to MP4 format
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Text messages" icon="message" href="/messaging/text-messages">
+    Send text, mentions, quotes, and polls
+  </Card>
+  <Card title="Receiving messages" icon="download" href="/messaging/receiving-messages">
+    Handle incoming messages and media
+  </Card>
+  <Card title="Message modification" icon="edit" href="/messaging/message-modification">
+    Edit, delete, and react to messages
+  </Card>
+  <Card title="Sending messages" icon="paper-plane" href="/messaging/sending-messages">
+    Core sendMessage API overview
+  </Card>
+</CardGroup>

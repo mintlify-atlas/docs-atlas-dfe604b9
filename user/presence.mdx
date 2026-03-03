@@ -1,0 +1,105 @@
+---
+title: Presence and typing indicators
+description: Send presence updates, typing indicators, and subscribe to user presence changes
+---
+
+## Send presence update
+
+Update your presence status or send typing indicators.
+
+```typescript
+// Mark yourself as available/online
+await sock.sendPresenceUpdate('available')
+
+// Mark yourself as unavailable/offline
+await sock.sendPresenceUpdate('unavailable')
+
+// Show typing indicator in a chat
+await sock.sendPresenceUpdate('composing', jid)
+
+// Show recording audio indicator
+await sock.sendPresenceUpdate('recording', jid)
+
+// Stop typing/recording indicator
+await sock.sendPresenceUpdate('paused', jid)
+```
+
+<ParamField path="type" type="WAPresence" required>
+  The type of presence to send:
+  - `available` - Mark yourself as online
+  - `unavailable` - Mark yourself as offline
+  - `composing` - Show typing indicator
+  - `recording` - Show recording audio indicator
+  - `paused` - Stop typing/recording indicator
+</ParamField>
+
+<ParamField path="toJid" type="string">
+  The JID of the chat where the presence update should be sent. Required for typing/recording indicators, optional for available/unavailable.
+</ParamField>
+
+<Note>
+  When sending `available` or `unavailable`, the presence is broadcast globally. For typing indicators (`composing`, `recording`, `paused`), you must specify the target chat JID.
+</Note>
+
+## Subscribe to presence updates
+
+Request to receive presence updates for a specific user or chat.
+
+```typescript
+// The presence update is fetched and called here
+sock.ev.on('presence.update', console.log)
+
+// Request updates for a chat
+await sock.presenceSubscribe(jid)
+```
+
+<ParamField path="toJid" type="string" required>
+  The JID of the user or chat to subscribe to for presence updates
+</ParamField>
+
+## Handle presence updates
+
+Listen for incoming presence updates from other users.
+
+```typescript
+sock.ev.on('presence.update', (update) => {
+    console.log('Presence update:', update)
+    // update contains:
+    // - id: JID of the user
+    // - presences: object with presence data
+})
+```
+
+<Info>
+  You must call `presenceSubscribe()` for a user before you can receive their presence updates. The `presence.update` event will fire whenever the subscribed user's presence changes.
+</Info>
+
+## Presence types
+
+<Accordion title="Available presence types">
+  - **available** - User is online/active
+  - **unavailable** - User is offline
+  - **composing** - User is typing a message
+  - **recording** - User is recording audio
+  - **paused** - User stopped typing/recording
+</Accordion>
+
+## Example: Show typing indicator
+
+```typescript
+// Start typing
+await sock.sendPresenceUpdate('composing', jid)
+
+// Simulate typing for 3 seconds
+await new Promise(resolve => setTimeout(resolve, 3000))
+
+// Stop typing
+await sock.sendPresenceUpdate('paused', jid)
+
+// Send the actual message
+await sock.sendMessage(jid, { text: 'Hello!' })
+```
+
+<Warning>
+  Typing indicators are temporary and will automatically expire. You should stop the indicator by sending a `paused` presence update when done typing.
+</Warning>

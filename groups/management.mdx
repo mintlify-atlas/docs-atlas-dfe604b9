@@ -1,0 +1,257 @@
+---
+title: Group management
+description: Creating groups, leaving groups, managing invite codes, and handling join requests
+---
+
+Baileys provides comprehensive APIs for managing WhatsApp groups, from creation to invite management.
+
+## Creating a group
+
+Create a new group with a name and initial participants:
+
+```ts
+// title & participants
+const group = await sock.groupCreate('My Fab Group', ['1234@s.whatsapp.net', '4564@s.whatsapp.net'])
+console.log('created group with id: ' + group.gid)
+await sock.sendMessage(group.id, { text: 'hello there' }) // say hello to everyone on the group
+```
+
+<ParamField path="subject" type="string" required>
+  The group name/title
+</ParamField>
+
+<ParamField path="participants" type="string[]" required>
+  Array of participant JIDs to add to the group (must use `@s.whatsapp.net` format)
+</ParamField>
+
+The function returns a `GroupMetadata` object containing the new group's information, including its JID.
+
+<Note>
+  The user creating the group automatically becomes the owner/superadmin.
+</Note>
+
+## Leaving a group
+
+Leave a group you're currently participating in:
+
+```ts
+// will throw error if it fails
+await sock.groupLeave(jid)
+```
+
+<Warning>
+  If you're the only admin in a group, you may need to promote another member to admin before leaving, or the group will be left without an admin.
+</Warning>
+
+## Invite codes
+
+Invite codes allow users to join groups via a link without needing to be added by an admin.
+
+### Getting the invite code
+
+Retrieve the current invite code for a group:
+
+```ts
+const code = await sock.groupInviteCode(jid)
+console.log('group code: ' + code)
+```
+
+To create a shareable link:
+
+```ts
+const code = await sock.groupInviteCode(jid)
+const inviteLink = 'https://chat.whatsapp.com/' + code
+console.log('Share this link: ' + inviteLink)
+```
+
+<Note>
+  Only group admins can retrieve invite codes.
+</Note>
+
+### Revoking invite codes
+
+Revoke the current invite code and generate a new one:
+
+```ts
+const code = await sock.groupRevokeInvite(jid)
+console.log('New group code: ' + code)
+```
+
+This invalidates all previously shared invite links and creates a new code. Use this if:
+- The invite link was shared publicly and you want to restrict access
+- You suspect unauthorized users have the link
+- You want to temporarily disable link-based joining
+
+<Warning>
+  Revoking an invite code will break all existing invite links. Anyone who has the old link will no longer be able to join.
+</Warning>
+
+## Joining groups
+
+There are multiple ways to join a group using Baileys.
+
+### Join using invite code
+
+Join a group using its invite code:
+
+```ts
+const response = await sock.groupAcceptInvite(code)
+console.log('joined to: ' + response)
+```
+
+<ParamField path="code" type="string" required>
+  The invite code (without the `https://chat.whatsapp.com/` prefix)
+</ParamField>
+
+<Note>
+  The code parameter should be just the code itself, not the full URL. For example, use `'ABC123DEF456'` instead of `'https://chat.whatsapp.com/ABC123DEF456'`.
+</Note>
+
+### Join using GroupInviteMessage
+
+Accept a group invite from a `GroupInviteMessage`:
+
+```ts
+const response = await sock.groupAcceptInviteV4(jid, groupInviteMessage)
+console.log('joined to: ' + response)
+```
+
+This is used when you receive a group invite message directly in chat. The function:
+- Accepts the invite and joins the group
+- Updates the invite message to mark it as expired
+- Generates a group add notification message
+
+<ParamField path="key" type="string | WAMessageKey" required>
+  The message key or JID of the person who sent the invite
+</ParamField>
+
+<ParamField path="inviteMessage" type="GroupInviteMessage" required>
+  The group invite message object containing `groupJid`, `inviteCode`, and `inviteExpiration`
+</ParamField>
+
+### Get group info from invite code
+
+Retrieve group information before joining:
+
+```ts
+const response = await sock.groupGetInviteInfo(code)
+console.log('group information: ' + response)
+```
+
+This allows you to preview group details (name, description, participant count, etc.) before deciding to join.
+
+### Revoke a v4 invite
+
+Revoke a specific invite sent to a user:
+
+```ts
+const success = await sock.groupRevokeInviteV4(groupJid, invitedJid)
+```
+
+This is useful when you've sent an invite to someone but want to revoke it before they join.
+
+## Join requests
+
+When a group has join approval mode enabled, users who try to join via invite link must be approved by an admin.
+
+### Getting join requests
+
+Retrieve the list of pending join requests:
+
+```ts
+const response = await sock.groupRequestParticipantsList(jid)
+console.log(response)
+// Returns array of: [{ jid: string, request_method: string, request_time: string }]
+```
+
+Each request includes:
+- `jid` - The user's JID
+- `request_method` - How they requested to join
+- `request_time` - Timestamp of the request
+
+### Approving or rejecting requests
+
+Process join requests by approving or rejecting them:
+
+```ts
+const response = await sock.groupRequestParticipantsUpdate(
+    jid, // group id
+    ['abcd@s.whatsapp.net', 'efgh@s.whatsapp.net'],
+    'approve' // or 'reject'
+)
+console.log(response)
+```
+
+<ParamField path="jid" type="string" required>
+  The group JID
+</ParamField>
+
+<ParamField path="participants" type="string[]" required>
+  Array of participant JIDs to approve or reject
+</ParamField>
+
+<ParamField path="action" type="'approve' | 'reject'" required>
+  Whether to approve or reject the join requests
+</ParamField>
+
+The function returns an array of results:
+
+```ts
+[
+  { status: '200', jid: 'abcd@s.whatsapp.net' },
+  { status: '200', jid: 'efgh@s.whatsapp.net' }
+]
+```
+
+<Accordion title="Handling join request workflows">
+  A typical join request workflow:
+  
+  <Steps>
+    <Step title="User requests to join">
+      User clicks an invite link for a group with join approval enabled
+    </Step>
+    
+    <Step title="Admin receives notification">
+      Group admins receive a notification about the pending request
+    </Step>
+    
+    <Step title="Admin reviews request">
+      Admin calls `groupRequestParticipantsList()` to see all pending requests
+    </Step>
+    
+    <Step title="Admin approves or rejects">
+      Admin calls `groupRequestParticipantsUpdate()` with 'approve' or 'reject'
+    </Step>
+    
+    <Step title="User is notified">
+      User receives confirmation that they've joined or notification that their request was rejected
+    </Step>
+  </Steps>
+</Accordion>
+
+<Note>
+  Only group admins can approve or reject join requests.
+</Note>
+
+## Updating group subject and description
+
+### Change group name
+
+```ts
+await sock.groupUpdateSubject(jid, 'New Subject!')
+```
+
+### Change group description
+
+```ts
+await sock.groupUpdateDescription(jid, 'New Description!')
+```
+
+The description update function automatically:
+- Fetches the current metadata to get the previous description ID
+- Sends the update with proper tracking
+- Handles description deletion if no description is provided
+
+<Warning>
+  Changing group subject or description requires admin privileges.
+</Warning>

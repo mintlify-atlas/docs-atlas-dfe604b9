@@ -1,0 +1,436 @@
+---
+title: WebSocket events
+description: Register callbacks for low-level WhatsApp protocol events
+---
+
+Baileys provides direct access to the underlying WebSocket connection, allowing you to register callbacks for low-level WhatsApp protocol events. This is useful for implementing custom functionality and monitoring protocol-level messages.
+
+## Event registration
+
+Register WebSocket event callbacks using the `sock.ws.on()` method:
+
+```typescript
+import makeWASocket, { BinaryNode } from '@whiskeysockets/baileys'
+
+const sock = makeWASocket({ /* config */ })
+
+// Register a callback
+sock.ws.on('CB:message', (node: BinaryNode) => {
+  console.log('Received message node:', node)
+})
+```
+
+## Event pattern syntax
+
+WebSocket events in Baileys use a specific pattern syntax to filter messages:
+
+### Basic pattern: by tag
+
+Listen for all messages with a specific tag:
+
+```typescript
+// Listen for any message with tag 'edge_routing'
+sock.ws.on('CB:edge_routing', (node: BinaryNode) => {
+  console.log('Edge routing message:', node)
+})
+```
+
+### Pattern: by tag and attribute
+
+Filter messages by tag and a specific attribute value:
+
+```typescript
+// Listen for 'edge_routing' messages with id='abcd'
+sock.ws.on('CB:edge_routing,id:abcd', (node: BinaryNode) => {
+  console.log('Edge routing with specific ID:', node)
+})
+```
+
+### Pattern: by tag, attribute, and content
+
+Filter by tag, attribute, and the first content node's tag:
+
+```typescript
+// Listen for 'edge_routing' with id='abcd' and first content tag 'routing_info'
+sock.ws.on('CB:edge_routing,id:abcd,routing_info', (node: BinaryNode) => {
+  console.log('Specific edge routing message:', node)
+})
+```
+
+## Pattern syntax reference
+
+The event pattern format is:
+
+```
+CB:<tag>[,<attr_key>:<attr_value>][,<first_content_tag>]
+```
+
+<AccordionGroup>
+  <Accordion title="CB: prefix">
+    All WebSocket callback events start with the `CB:` prefix. This distinguishes them from other event types.
+  </Accordion>
+  
+  <Accordion title="<tag>">
+    The message tag identifies the type of message (e.g., `message`, `iq`, `ib`, `presence`).
+  </Accordion>
+  
+  <Accordion title="<attr_key>:<attr_value>">
+    Optional filter by attribute. Match messages where `attrs[attr_key] === attr_value`.
+  </Accordion>
+  
+  <Accordion title="<first_content_tag>">
+    Optional filter by the tag of the first content node (if content is an array).
+  </Accordion>
+</AccordionGroup>
+
+## BinaryNode structure
+
+Every WebSocket callback receives a `BinaryNode` object:
+
+```typescript
+interface BinaryNode {
+  tag: string                    // Message type
+  attrs: { [key: string]: string }  // Metadata
+  content?: BinaryNode[] | Buffer | string  // Data or nested nodes
+}
+```
+
+### Example binary node
+
+```json
+{
+  "tag": "ib",
+  "attrs": {
+    "from": "@s.whatsapp.net"
+  },
+  "content": [
+    {
+      "tag": "edge_routing",
+      "attrs": {},
+      "content": [
+        {
+          "tag": "routing_info",
+          "attrs": {},
+          "content": {
+            "type": "Buffer",
+            "data": [8, 2, 8, 5]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Common event patterns
+
+### Message events
+
+```typescript
+// Any message received
+sock.ws.on('CB:message', (node: BinaryNode) => {
+  console.log('Message received:', node)
+})
+
+// Specific message by ID
+sock.ws.on('CB:message,id:MESSAGE_ID', (node: BinaryNode) => {
+  console.log('Specific message:', node)
+})
+```
+
+### Presence events
+
+```typescript
+// Any presence update
+sock.ws.on('CB:presence', (node: BinaryNode) => {
+  const from = node.attrs.from
+  const type = node.attrs.type // 'available', 'unavailable', 'composing', etc.
+  console.log(`${from} is ${type}`)
+})
+
+// Only available status
+sock.ws.on('CB:presence,type:available', (node: BinaryNode) => {
+  console.log(`${node.attrs.from} came online`)
+})
+
+// Only composing (typing)
+sock.ws.on('CB:presence,type:composing', (node: BinaryNode) => {
+  console.log(`${node.attrs.from} is typing...`)
+})
+```
+
+### IQ (Info/Query) events
+
+```typescript
+// All IQ messages
+sock.ws.on('CB:iq', (node: BinaryNode) => {
+  console.log('IQ message:', node)
+})
+
+// IQ set requests
+sock.ws.on('CB:iq,type:set', (node: BinaryNode) => {
+  console.log('IQ set request:', node)
+})
+
+// Specific pairing device requests
+sock.ws.on('CB:iq,type:set,pair-device', (node: BinaryNode) => {
+  console.log('Pair device request:', node)
+})
+```
+
+### Stream events
+
+```typescript
+// Stream errors
+sock.ws.on('CB:stream:error', (node: BinaryNode) => {
+  console.error('Stream error:', node)
+})
+
+// Connection failures
+sock.ws.on('CB:failure', (node: BinaryNode) => {
+  console.error('Connection failure:', node)
+})
+
+// Stream end
+sock.ws.on('CB:xmlstreamend', () => {
+  console.log('Stream ended by server')
+})
+```
+
+## Built-in WebSocket events
+
+Baileys uses several WebSocket events internally. Here are some you can hook into:
+
+<CodeGroup>
+```typescript Pairing and authentication
+// QR code generation
+sock.ws.on('CB:iq,type:set,pair-device', (stanza: BinaryNode) => {
+  console.log('QR code pairing requested')
+})
+
+// Pairing success
+sock.ws.on('CB:iq,,pair-success', (stanza: BinaryNode) => {
+  console.log('Device paired successfully')
+})
+
+// Login success
+sock.ws.on('CB:success', (node: BinaryNode) => {
+  console.log('Login successful')
+})
+```
+
+```typescript Edge routing
+// Edge routing updates
+sock.ws.on('CB:ib,,edge_routing', (node: BinaryNode) => {
+  console.log('Edge routing info received')
+})
+```
+
+```typescript Offline messages
+// Offline preview
+sock.ws.on('CB:ib,,offline_preview', (node: BinaryNode) => {
+  console.log('Offline preview received')
+})
+
+// Offline batch complete
+sock.ws.on('CB:ib,,offline', (node: BinaryNode) => {
+  const count = node.content?.[0]?.attrs?.count || 0
+  console.log(`Processed ${count} offline messages`)
+})
+```
+
+```typescript Multi-device
+// Downgrade to single device
+sock.ws.on('CB:ib,,downgrade_webclient', () => {
+  console.log('Multi-device beta not joined')
+})
+```
+</CodeGroup>
+
+## Understanding the event flow
+
+When a message arrives via WebSocket:
+
+1. **Raw data** received through WebSocket connection
+2. **Decryption** via Noise protocol handler
+3. **Binary parsing** converts to BinaryNode structure
+4. **Event emission** fires multiple events in this order:
+   - `frame` event (raw BinaryNode)
+   - `TAG:<msgId>` event (for specific message ID)
+   - `CB:<tag>,<attr>:<value>,<content>` events (most specific to least specific)
+5. **Logging** if unhandled and logger level is `'debug'`
+
+<Tip>
+  To understand the event flow in detail, examine the `onMessageReceived` function in the [socket.ts source file](https://github.com/WhiskeySockets/Baileys/blob/master/src/Socket/socket.ts#L583-L619).
+</Tip>
+
+## Event emission hierarchy
+
+For a message with tag `'iq'`, `attrs.type='set'`, `attrs.id='123'`, and first content tag `'pair-device'`, Baileys emits events in this order:
+
+```typescript
+// Most specific
+ws.emit('CB:iq,type:set,pair-device', node)
+ws.emit('CB:iq,id:123,pair-device', node)
+
+// Medium specificity
+ws.emit('CB:iq,type:set', node)
+ws.emit('CB:iq,id:123', node)
+
+// Less specific
+ws.emit('CB:iq,type', node)
+ws.emit('CB:iq,id', node)
+
+// With content tag only
+ws.emit('CB:iq,,pair-device', node)
+
+// Least specific
+ws.emit('CB:iq', node)
+```
+
+<Note>
+  Baileys tries multiple patterns, emitting from most specific to least specific. Your callback will trigger on the first matching pattern.
+</Note>
+
+## Working with binary nodes
+
+### Accessing node data
+
+```typescript
+sock.ws.on('CB:message', (node: BinaryNode) => {
+  // Access tag
+  console.log('Tag:', node.tag)
+  
+  // Access attributes
+  console.log('From:', node.attrs.from)
+  console.log('ID:', node.attrs.id)
+  
+  // Access content
+  if (Array.isArray(node.content)) {
+    node.content.forEach((child: BinaryNode) => {
+      console.log('Child tag:', child.tag)
+    })
+  }
+})
+```
+
+### Helper utilities
+
+Baileys provides utilities for working with binary nodes:
+
+```typescript
+import {
+  getBinaryNodeChild,
+  getBinaryNodeChildren,
+  getAllBinaryNodeChildren,
+  binaryNodeToString
+} from '@whiskeysockets/baileys'
+
+sock.ws.on('CB:ib', (node: BinaryNode) => {
+  // Get first child with specific tag
+  const child = getBinaryNodeChild(node, 'edge_routing')
+  
+  // Get all children with specific tag
+  const children = getBinaryNodeChildren(node, 'message')
+  
+  // Get all children (any tag)
+  const allChildren = getAllBinaryNodeChildren(node)
+  
+  // Convert to readable string (XML-like format)
+  console.log(binaryNodeToString(node))
+})
+```
+
+## Removing event listeners
+
+Clean up event listeners when they're no longer needed:
+
+```typescript
+const handler = (node: BinaryNode) => {
+  console.log('Received message:', node)
+}
+
+// Register
+sock.ws.on('CB:message', handler)
+
+// Later, remove
+sock.ws.off('CB:message', handler)
+
+// Remove all listeners for an event
+sock.ws.removeAllListeners('CB:message')
+```
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Use specific patterns">
+    Register the most specific pattern possible to avoid processing unnecessary messages:
+    
+    ```typescript
+    // Better - specific
+    sock.ws.on('CB:iq,type:set,pair-device', callback)
+    
+    // Worse - too broad
+    sock.ws.on('CB:iq', callback)
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle errors">
+    Always wrap callbacks in try-catch blocks:
+    
+    ```typescript
+    sock.ws.on('CB:message', (node: BinaryNode) => {
+      try {
+        // Process node
+      } catch (error) {
+        console.error('Error processing message:', error)
+      }
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Don't block the event loop">
+    Keep callbacks fast. For heavy processing, use async operations:
+    
+    ```typescript
+    sock.ws.on('CB:message', (node: BinaryNode) => {
+      // Don't block
+      processMessageAsync(node).catch(console.error)
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Use debug logging to discover events">
+    Enable debug logging to see all messages and discover event patterns:
+    
+    ```typescript
+    const sock = makeWASocket({
+      logger: P({ level: 'debug' }),
+    })
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Debugging event registration
+
+Verify your event listeners are registered:
+
+```typescript
+// Check if listener exists
+const hasListener = sock.ws.listenerCount('CB:message') > 0
+console.log('Has message listener:', hasListener)
+
+// Get all event names
+const events = sock.ws.eventNames()
+console.log('Registered events:', events)
+
+// Get listener count
+const count = sock.ws.listenerCount('CB:message')
+console.log('Message listeners:', count)
+```
+
+## Next steps
+
+- Learn about [custom functionality](/advanced/custom-functionality)
+- Explore [debugging techniques](/advanced/debugging)
+- Read about the [binary format specification](https://github.com/WhiskeySockets/Baileys/blob/master/src/WABinary/)

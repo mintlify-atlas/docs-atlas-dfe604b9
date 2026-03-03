@@ -1,0 +1,302 @@
+---
+title: Text messages
+description: Send text messages with mentions, quotes, links, and special message types
+---
+
+Text messages are the most common message type in WhatsApp. Baileys supports plain text, formatted text, mentions, quoted replies, and more.
+
+## Basic text message
+
+Send a simple text message:
+
+```typescript
+await sock.sendMessage(jid, { text: 'Hello, World!' })
+```
+
+## Mentions
+
+Mention users in your messages by including their JID in the `mentions` array:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    text: '@12345678901 Hello there!',
+    mentions: ['12345678901@s.whatsapp.net']
+  }
+)
+```
+
+<Note>
+  The `@number` format in the text is optional but provides a better user experience. The `mentions` array is required for the mention to work.
+</Note>
+
+### Multiple mentions
+
+```typescript
+await sock.sendMessage(
+  groupJid,
+  {
+    text: 'Hey @12345678901 and @10987654321, check this out!',
+    mentions: [
+      '12345678901@s.whatsapp.net',
+      '10987654321@s.whatsapp.net'
+    ]
+  }
+)
+```
+
+## Quoted messages
+
+Reply to or quote any message type:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  { text: 'This is my reply' },
+  { quoted: originalMessage }
+)
+```
+
+<Tip>
+  The `quoted` option works with all message types, not just text. You can quote media, locations, contacts, and more.
+</Tip>
+
+### Get message from store
+
+To quote a message, you need the original `WAMessage` object:
+
+```typescript
+// Retrieve from your message store
+const msg = await getMessageFromStore(messageId) // Implement this function
+
+await sock.sendMessage(
+  jid,
+  { text: 'Replying to your message' },
+  { quoted: msg }
+)
+```
+
+## Forward messages
+
+Forward existing messages to other chats:
+
+```typescript
+const msg = getMessageFromStore() // Implement this on your end
+await sock.sendMessage(jid, { forward: msg })
+```
+
+<Note>
+  WhatsApp will display the message as forwarded, showing the original sender information.
+</Note>
+
+## Link previews
+
+Baileys can automatically generate link previews for URLs in messages:
+
+### Setup
+
+1. Install the `link-preview-js` dependency:
+
+```bash
+npm install link-preview-js
+# or
+yarn add link-preview-js
+```
+
+2. Send a message with a URL:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    text: 'Check out https://github.com/whiskeysockets/baileys'
+  }
+)
+```
+
+<Note>
+  By default, WhatsApp Web does not generate link previews. Baileys automatically generates them when `link-preview-js` is installed.
+</Note>
+
+### Configure link preview generation
+
+Customize link preview behavior at the socket level:
+
+```typescript
+const sock = makeWASocket({
+  linkPreviewImageThumbnailWidth: 192, // Thumbnail width in pixels
+  generateHighQualityLinkPreview: true // Upload full image instead of thumbnail
+})
+```
+
+## Location messages
+
+Share geographical coordinates:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    location: {
+      degreesLatitude: 24.121231,
+      degreesLongitude: 55.1121221
+    }
+  }
+)
+```
+
+### Location with name
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    location: {
+      degreesLatitude: 37.7749,
+      degreesLongitude: -122.4194,
+      name: 'San Francisco',
+      address: 'San Francisco, CA, USA'
+    }
+  }
+)
+```
+
+## Contact messages
+
+Share contact information using vCard format:
+
+```typescript
+const vcard = 'BEGIN:VCARD\n'
+  + 'VERSION:3.0\n'
+  + 'FN:Jeff Singh\n' // Full name
+  + 'ORG:Ashoka Uni;\n' // Organization
+  + 'TEL;type=CELL;type=VOICE;waid=911234567890:+91 12345 67890\n' // WhatsApp ID + phone
+  + 'END:VCARD'
+
+await sock.sendMessage(
+  jid,
+  {
+    contacts: {
+      displayName: 'Jeff',
+      contacts: [{ vcard }]
+    }
+  }
+)
+```
+
+### Multiple contacts
+
+```typescript
+const vcard1 = 'BEGIN:VCARD\n...\nEND:VCARD'
+const vcard2 = 'BEGIN:VCARD\n...\nEND:VCARD'
+
+await sock.sendMessage(
+  jid,
+  {
+    contacts: {
+      displayName: 'My Contacts',
+      contacts: [
+        { vcard: vcard1 },
+        { vcard: vcard2 }
+      ]
+    }
+  }
+)
+```
+
+## Poll messages
+
+Create interactive polls:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    poll: {
+      name: 'What is your favorite color?',
+      values: ['Red', 'Green', 'Blue', 'Yellow'],
+      selectableCount: 1 // Allow selecting only 1 option
+    }
+  }
+)
+```
+
+### Multi-select polls
+
+```typescript
+await sock.sendMessage(
+  groupJid,
+  {
+    poll: {
+      name: 'Which features do you want?',
+      values: ['Feature A', 'Feature B', 'Feature C', 'Feature D'],
+      selectableCount: 3 // Allow selecting up to 3 options
+    }
+  }
+)
+```
+
+### Announcement group polls
+
+For announcement groups, set the `toAnnouncementGroup` flag:
+
+```typescript
+await sock.sendMessage(
+  announcementGroupJid,
+  {
+    poll: {
+      name: 'Community Poll',
+      values: ['Option 1', 'Option 2', 'Option 3'],
+      selectableCount: 1,
+      toAnnouncementGroup: true
+    }
+  }
+)
+```
+
+## Combining features
+
+You can combine multiple features in a single message:
+
+```typescript
+// Text with mentions and quote
+await sock.sendMessage(
+  groupJid,
+  {
+    text: '@12345678901 I agree with your point!',
+    mentions: ['12345678901@s.whatsapp.net']
+  },
+  { quoted: previousMessage }
+)
+```
+
+## Best practices
+
+<Tip>
+  - Always validate phone numbers before adding them to mentions
+  - Keep vCard format strictly compliant for contact messages
+  - Use appropriate selectableCount for polls (1 for single-choice, > 1 for multi-choice)
+  - Store message objects if you plan to quote or forward them later
+</Tip>
+
+<Warning>
+  Mentions only work with valid WhatsApp JIDs. Ensure the user exists before mentioning them.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Media messages" icon="image" href="/messaging/media-messages">
+    Send images, videos, audio files, and documents
+  </Card>
+  <Card title="Message modification" icon="edit" href="/messaging/message-modification">
+    Edit, delete, react to, and pin messages
+  </Card>
+  <Card title="Receiving messages" icon="download" href="/messaging/receiving-messages">
+    Handle incoming messages and events
+  </Card>
+  <Card title="Sending messages" icon="paper-plane" href="/messaging/sending-messages">
+    Learn about the core sendMessage API
+  </Card>
+</CardGroup>

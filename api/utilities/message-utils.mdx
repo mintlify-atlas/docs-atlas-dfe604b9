@@ -1,0 +1,554 @@
+---
+title: Message utilities
+description: Utilities for creating, formatting, and managing WhatsApp messages
+---
+
+Message utilities provide functions for generating messages, extracting content, and handling message metadata.
+
+## getContentType
+
+Extracts the content type key from a message object to determine the message type.
+
+```typescript
+function getContentType(
+  content: proto.IMessage | undefined
+): keyof proto.IMessage | undefined
+```
+
+### Parameters
+
+<ParamField path="content" type="proto.IMessage | undefined" required>
+  The message content object to analyze.
+</ParamField>
+
+### Returns
+
+The key representing the message type (e.g., `'conversation'`, `'imageMessage'`, `'videoMessage'`), or `undefined` if no valid content type is found.
+
+### Usage example
+
+```typescript
+import { getContentType } from '@whiskeysockets/baileys'
+
+const message = {
+  conversation: 'Hello World'
+}
+
+const type = getContentType(message)
+console.log(type) // 'conversation'
+
+const imageMsg = {
+  imageMessage: {
+    url: 'https://example.com/image.jpg',
+    mimetype: 'image/jpeg'
+  }
+}
+
+const imageType = getContentType(imageMsg)
+console.log(imageType) // 'imageMessage'
+```
+
+## generateMessageID
+
+Generates a random message ID in WhatsApp's format.
+
+```typescript
+function generateMessageID(): string
+```
+
+### Returns
+
+A randomly generated message ID string in the format `3EB0` followed by 18 hexadecimal characters.
+
+### Usage example
+
+```typescript
+import { generateMessageID } from '@whiskeysockets/baileys'
+
+const msgId = generateMessageID()
+console.log(msgId) // '3EB0A1B2C3D4E5F6789ABC'
+```
+
+## generateMessageIDV2
+
+Generates a message ID using an improved algorithm that incorporates timestamp and user information.
+
+```typescript
+function generateMessageIDV2(userId?: string): string
+```
+
+### Parameters
+
+<ParamField path="userId" type="string">
+  Optional user JID to incorporate into the message ID for better uniqueness.
+</ParamField>
+
+### Returns
+
+A message ID string that includes timestamp and optional user data, hashed with SHA256.
+
+### Usage example
+
+```typescript
+import { generateMessageIDV2 } from '@whiskeysockets/baileys'
+
+const msgId = generateMessageIDV2('1234567890@s.whatsapp.net')
+console.log(msgId) // '3EB0' + 18 hex chars derived from timestamp and user
+```
+
+<Note>
+  `generateMessageIDV2` is preferred over `generateMessageID` as it produces more deterministic IDs that are less likely to collide.
+</Note>
+
+## normalizeMessageContent
+
+Normalizes ephemeral, view-once, and other wrapped messages to extract the core message content.
+
+```typescript
+function normalizeMessageContent(
+  content: WAMessageContent | null | undefined
+): WAMessageContent | undefined
+```
+
+### Parameters
+
+<ParamField path="content" type="WAMessageContent | null | undefined" required>
+  The message content to normalize.
+</ParamField>
+
+### Returns
+
+The normalized message content with wrapper layers removed (ephemeral, viewOnce, etc.).
+
+### Usage example
+
+```typescript
+import { normalizeMessageContent } from '@whiskeysockets/baileys'
+
+const wrappedMessage = {
+  viewOnceMessage: {
+    message: {
+      imageMessage: {
+        url: 'https://example.com/image.jpg'
+      }
+    }
+  }
+}
+
+const normalized = normalizeMessageContent(wrappedMessage)
+console.log(normalized)
+// { imageMessage: { url: 'https://example.com/image.jpg' } }
+```
+
+## extractMessageContent
+
+Extracts the actual content from a message, unwrapping various message types including templates and buttons.
+
+```typescript
+function extractMessageContent(
+  content: WAMessageContent | undefined | null
+): WAMessageContent | undefined
+```
+
+### Parameters
+
+<ParamField path="content" type="WAMessageContent | undefined | null" required>
+  The message content to extract from.
+</ParamField>
+
+### Returns
+
+The extracted core message content, or `undefined` if no content is present.
+
+### Usage example
+
+```typescript
+import { extractMessageContent } from '@whiskeysockets/baileys'
+
+const templateMessage = {
+  buttonsMessage: {
+    imageMessage: {
+      url: 'https://example.com/image.jpg'
+    },
+    contentText: 'Choose an option'
+  }
+}
+
+const content = extractMessageContent(templateMessage)
+console.log(content)
+// { imageMessage: { url: 'https://example.com/image.jpg' } }
+```
+
+## generateWAMessageContent
+
+Generates WhatsApp message content from a high-level message object.
+
+```typescript
+async function generateWAMessageContent(
+  message: AnyMessageContent,
+  options: MessageContentGenerationOptions
+): Promise<WAMessageContent>
+```
+
+### Parameters
+
+<ParamField path="message" type="AnyMessageContent" required>
+  The message to generate content for. Can be text, media, location, contact, etc.
+</ParamField>
+
+<ParamField path="options" type="MessageContentGenerationOptions" required>
+  Options for content generation.
+  
+  <ParamField path="upload" type="WAMediaUploadFunction">
+    Function to upload media files.
+  </ParamField>
+  
+  <ParamField path="logger" type="ILogger">
+    Logger instance for debugging.
+  </ParamField>
+  
+  <ParamField path="mediaCache" type="CacheStore">
+    Cache for media uploads to avoid re-uploading.
+  </ParamField>
+  
+  <ParamField path="getUrlInfo" type="function">
+    Function to fetch link preview information.
+  </ParamField>
+  
+  <ParamField path="backgroundColor" type="string | number">
+    Background color for audio status messages.
+  </ParamField>
+</ParamField>
+
+### Returns
+
+A Promise resolving to a `WAMessageContent` object ready to be sent.
+
+### Usage example
+
+```typescript
+import { generateWAMessageContent } from '@whiskeysockets/baileys'
+
+const content = await generateWAMessageContent(
+  { text: 'Hello with link preview: https://github.com' },
+  {
+    upload: uploadFunction,
+    logger: myLogger,
+    getUrlInfo: async (url) => {
+      // Fetch link preview data
+      return {
+        'matched-text': url,
+        title: 'GitHub',
+        description: 'Where the world builds software'
+      }
+    }
+  }
+)
+```
+
+## generateWAMessageFromContent
+
+Generates a complete WAMessage from message content, adding metadata like timestamp and message key.
+
+```typescript
+function generateWAMessageFromContent(
+  jid: string,
+  message: WAMessageContent,
+  options: MessageGenerationOptionsFromContent
+): WAMessage
+```
+
+### Parameters
+
+<ParamField path="jid" type="string" required>
+  The recipient JID (e.g., `'1234567890@s.whatsapp.net'` or group JID).
+</ParamField>
+
+<ParamField path="message" type="WAMessageContent" required>
+  The message content to wrap.
+</ParamField>
+
+<ParamField path="options" type="MessageGenerationOptionsFromContent" required>
+  Message generation options.
+  
+  <ParamField path="timestamp" type="Date">
+    Message timestamp (defaults to current time).
+  </ParamField>
+  
+  <ParamField path="messageId" type="string">
+    Custom message ID (auto-generated if not provided).
+  </ParamField>
+  
+  <ParamField path="quoted" type="WAMessage">
+    Message being quoted/replied to.
+  </ParamField>
+  
+  <ParamField path="userJid" type="string">
+    Your user JID.
+  </ParamField>
+  
+  <ParamField path="ephemeralExpiration" type="number">
+    Expiration time in seconds for disappearing messages.
+  </ParamField>
+</ParamField>
+
+### Returns
+
+A complete `WAMessage` object with key, content, and metadata.
+
+### Usage example
+
+```typescript
+import { generateWAMessageFromContent, proto } from '@whiskeysockets/baileys'
+
+const message = generateWAMessageFromContent(
+  '1234567890@s.whatsapp.net',
+  {
+    conversation: 'Hello World'
+  },
+  {
+    userJid: 'me@s.whatsapp.net',
+    timestamp: new Date()
+  }
+)
+
+console.log(message.key.id) // Auto-generated message ID
+console.log(message.key.remoteJid) // '1234567890@s.whatsapp.net'
+```
+
+## generateWAMessage
+
+Combines content generation and message creation into a single function.
+
+```typescript
+async function generateWAMessage(
+  jid: string,
+  content: AnyMessageContent,
+  options: MessageGenerationOptions
+): Promise<WAMessage>
+```
+
+### Parameters
+
+<ParamField path="jid" type="string" required>
+  The recipient JID.
+</ParamField>
+
+<ParamField path="content" type="AnyMessageContent" required>
+  High-level message content (text, media, location, etc.).
+</ParamField>
+
+<ParamField path="options" type="MessageGenerationOptions" required>
+  Combined options for both content generation and message creation.
+</ParamField>
+
+### Returns
+
+A Promise resolving to a complete `WAMessage` ready to send.
+
+### Usage example
+
+```typescript
+import { generateWAMessage } from '@whiskeysockets/baileys'
+
+const message = await generateWAMessage(
+  '1234567890@s.whatsapp.net',
+  { text: 'Hello World!' },
+  {
+    userJid: 'me@s.whatsapp.net',
+    upload: uploadFunction,
+    logger: myLogger
+  }
+)
+
+// Send the message
+await sock.relayMessage(message.key.remoteJid, message.message, {
+  messageId: message.key.id
+})
+```
+
+## generateForwardMessageContent
+
+Generates content for forwarding a message, maintaining forward count and metadata.
+
+```typescript
+function generateForwardMessageContent(
+  message: WAMessage,
+  forceForward?: boolean
+): WAMessageContent
+```
+
+### Parameters
+
+<ParamField path="message" type="WAMessage" required>
+  The message to forward.
+</ParamField>
+
+<ParamField path="forceForward" type="boolean">
+  If `true`, shows the message as forwarded even if it's from you.
+</ParamField>
+
+### Returns
+
+Message content formatted for forwarding with updated forwarding score.
+
+### Usage example
+
+```typescript
+import { generateForwardMessageContent, generateWAMessage } from '@whiskeysockets/baileys'
+
+// Forward a received message
+const forwardContent = generateForwardMessageContent(receivedMessage)
+
+const forwardMsg = await generateWAMessage(
+  '9876543210@s.whatsapp.net',
+  { forward: receivedMessage },
+  options
+)
+```
+
+## updateMessageWithReceipt
+
+Updates a message with read receipt information.
+
+```typescript
+function updateMessageWithReceipt(
+  msg: Pick<WAMessage, 'userReceipt'>,
+  receipt: MessageUserReceipt
+): void
+```
+
+### Parameters
+
+<ParamField path="msg" type="Pick<WAMessage, 'userReceipt'>" required>
+  The message object to update.
+</ParamField>
+
+<ParamField path="receipt" type="MessageUserReceipt" required>
+  The receipt information to add or update.
+</ParamField>
+
+### Usage example
+
+```typescript
+import { updateMessageWithReceipt } from '@whiskeysockets/baileys'
+
+const message = { userReceipt: [] }
+
+updateMessageWithReceipt(message, {
+  userJid: '1234567890@s.whatsapp.net',
+  receiptTimestamp: Date.now(),
+  readTimestamp: Date.now()
+})
+```
+
+## updateMessageWithReaction
+
+Updates a message with reaction information.
+
+```typescript
+function updateMessageWithReaction(
+  msg: Pick<WAMessage, 'reactions'>,
+  reaction: proto.IReaction
+): void
+```
+
+### Parameters
+
+<ParamField path="msg" type="Pick<WAMessage, 'reactions'>" required>
+  The message object to update.
+</ParamField>
+
+<ParamField path="reaction" type="proto.IReaction" required>
+  The reaction to add or update.
+</ParamField>
+
+### Usage example
+
+```typescript
+import { updateMessageWithReaction } from '@whiskeysockets/baileys'
+
+const message = { reactions: [] }
+
+updateMessageWithReaction(message, {
+  key: messageKey,
+  text: '❤️',
+  senderTimestampMs: Date.now()
+})
+```
+
+## getAggregateVotesInPollMessage
+
+Aggregates all votes in a poll message to show results.
+
+```typescript
+function getAggregateVotesInPollMessage(
+  message: Pick<WAMessage, 'pollUpdates' | 'message'>,
+  meId?: string
+): Array<{ name: string; voters: string[] }>
+```
+
+### Parameters
+
+<ParamField path="message" type="Pick<WAMessage, 'pollUpdates' | 'message'>" required>
+  The poll message with updates.
+</ParamField>
+
+<ParamField path="meId" type="string">
+  Your user JID for proper vote attribution.
+</ParamField>
+
+### Returns
+
+Array of poll options with their vote counts and voter JIDs.
+
+### Usage example
+
+```typescript
+import { getAggregateVotesInPollMessage } from '@whiskeysockets/baileys'
+
+const pollResults = getAggregateVotesInPollMessage(
+  pollMessage,
+  'me@s.whatsapp.net'
+)
+
+pollResults.forEach(option => {
+  console.log(`${option.name}: ${option.voters.length} votes`)
+  console.log('Voters:', option.voters)
+})
+```
+
+## getDevice
+
+Determines the device type from a message ID.
+
+```typescript
+function getDevice(id: string): 'ios' | 'web' | 'android' | 'desktop' | 'unknown'
+```
+
+### Parameters
+
+<ParamField path="id" type="string" required>
+  The message ID to analyze.
+</ParamField>
+
+### Returns
+
+The detected device type based on the message ID pattern.
+
+### Usage example
+
+```typescript
+import { getDevice } from '@whiskeysockets/baileys'
+
+const device = getDevice(message.key.id)
+console.log(device) // 'android', 'ios', 'web', etc.
+```
+
+## Related types
+
+- `AnyMessageContent` - Union type of all possible message content
+- `WAMessage` - Complete WhatsApp message structure
+- `WAMessageContent` - Protocol buffer message content
+- `MessageGenerationOptions` - Options for message generation
+- `proto.IMessage` - Protocol buffer message interface

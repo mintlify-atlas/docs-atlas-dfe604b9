@@ -1,0 +1,501 @@
+---
+title: Message types
+description: Type definitions for WhatsApp messages and message content
+---
+
+## Core message types
+
+### WAMessage
+
+Represents a complete WhatsApp message with metadata.
+
+```typescript
+export type WAMessage = proto.IWebMessageInfo & {
+  key: WAMessageKey
+  messageStubParameters?: any
+  category?: string
+  retryCount?: number
+}
+```
+
+<ResponseField name="key" type="WAMessageKey" required>
+  Unique identifier for the message
+</ResponseField>
+
+<ResponseField name="message" type="WAMessageContent">
+  The actual message content (text, media, etc.)
+</ResponseField>
+
+<ResponseField name="messageTimestamp" type="number">
+  Unix timestamp when the message was sent
+</ResponseField>
+
+<ResponseField name="messageStubParameters" type="any[]">
+  Parameters for system messages (group events, etc.)
+</ResponseField>
+
+<ResponseField name="category" type="string">
+  Message category classification
+</ResponseField>
+
+<ResponseField name="retryCount" type="number">
+  Number of times message delivery was retried
+</ResponseField>
+
+### WAMessageKey
+
+Unique identifier for a message across conversations.
+
+```typescript
+export type WAMessageKey = proto.IMessageKey & {
+  remoteJidAlt?: string
+  participantAlt?: string
+  server_id?: string
+  addressingMode?: string
+  isViewOnce?: boolean
+}
+```
+
+<ResponseField name="remoteJid" type="string" required>
+  JID of the chat (user or group)
+</ResponseField>
+
+<ResponseField name="fromMe" type="boolean" required>
+  Whether the message was sent by you
+</ResponseField>
+
+<ResponseField name="id" type="string" required>
+  Unique message ID
+</ResponseField>
+
+<ResponseField name="participant" type="string">
+  JID of sender in group chats
+</ResponseField>
+
+### WAMessageContent
+
+The Protocol Buffer message content.
+
+```typescript
+export type WAMessageContent = proto.IMessage
+```
+
+This type includes all possible message content types from the WhatsApp protocol.
+
+## Message content types
+
+### AnyMessageContent
+
+Union type for all sendable message content.
+
+```typescript
+export type AnyMessageContent =
+  | AnyRegularMessageContent
+  | { forward: WAMessage; force?: boolean }
+  | { delete: WAMessageKey }
+  | { disappearingMessagesInChat: boolean | number }
+  | { limitSharing: boolean }
+```
+
+### AnyRegularMessageContent
+
+Regular user-sent messages.
+
+```typescript
+export type AnyRegularMessageContent = (
+  | TextMessageContent
+  | AnyMediaMessageContent
+  | { event: EventMessageOptions }
+  | { poll: PollMessageOptions }
+  | { contacts: ContactsContent }
+  | { location: WALocationMessage }
+  | { react: proto.Message.IReactionMessage }
+  | ButtonReplyContent
+  | GroupInviteContent
+  | ListReplyContent
+  | PinMessageContent
+  | ProductMessageContent
+  | SharePhoneNumber
+  | RequestPhoneNumber
+) & ViewOnce
+```
+
+### Text messages
+
+```typescript
+type TextMessageContent = {
+  text: string
+  linkPreview?: WAUrlInfo | null
+} & Mentionable & Contextable & Editable
+```
+
+<ResponseField name="text" type="string" required>
+  The message text content
+</ResponseField>
+
+<ResponseField name="linkPreview" type="WAUrlInfo | null">
+  Link preview metadata
+</ResponseField>
+
+<ResponseField name="mentions" type="string[]">
+  JIDs of users mentioned in the text
+</ResponseField>
+
+<ResponseField name="contextInfo" type="proto.IContextInfo">
+  Context information (quoted message, etc.)
+</ResponseField>
+
+<ResponseField name="edit" type="WAMessageKey">
+  Key of message being edited
+</ResponseField>
+
+### AnyMediaMessageContent
+
+Media messages (images, videos, audio, documents, stickers).
+
+```typescript
+export type AnyMediaMessageContent = (
+  | ImageMessage
+  | VideoMessage
+  | AudioMessage
+  | StickerMessage
+  | DocumentMessage
+) & { mimetype?: string } & Editable
+```
+
+#### Image message
+
+```typescript
+type ImageMessage = {
+  image: WAMediaUpload
+  caption?: string
+  jpegThumbnail?: string
+  width?: number
+  height?: number
+} & Mentionable & Contextable
+```
+
+<ResponseField name="image" type="WAMediaUpload" required>
+  Image file (Buffer, stream, or URL)
+</ResponseField>
+
+<ResponseField name="caption" type="string">
+  Image caption text
+</ResponseField>
+
+<ResponseField name="jpegThumbnail" type="string">
+  Base64 JPEG thumbnail
+</ResponseField>
+
+<ResponseField name="width" type="number">
+  Image width in pixels
+</ResponseField>
+
+<ResponseField name="height" type="number">
+  Image height in pixels
+</ResponseField>
+
+#### Video message
+
+```typescript
+type VideoMessage = {
+  video: WAMediaUpload
+  caption?: string
+  gifPlayback?: boolean
+  jpegThumbnail?: string
+  ptv?: boolean
+  width?: number
+  height?: number
+} & Mentionable & Contextable
+```
+
+<ResponseField name="video" type="WAMediaUpload" required>
+  Video file (Buffer, stream, or URL)
+</ResponseField>
+
+<ResponseField name="caption" type="string">
+  Video caption text
+</ResponseField>
+
+<ResponseField name="gifPlayback" type="boolean">
+  Play as GIF (no sound)
+</ResponseField>
+
+<ResponseField name="ptv" type="boolean">
+  Send as video note (round video)
+</ResponseField>
+
+#### Audio message
+
+```typescript
+type AudioMessage = {
+  audio: WAMediaUpload
+  ptt?: boolean
+  seconds?: number
+}
+```
+
+<ResponseField name="audio" type="WAMediaUpload" required>
+  Audio file (Buffer, stream, or URL)
+</ResponseField>
+
+<ResponseField name="ptt" type="boolean">
+  Send as voice note
+</ResponseField>
+
+<ResponseField name="seconds" type="number">
+  Audio duration in seconds
+</ResponseField>
+
+#### Sticker message
+
+```typescript
+type StickerMessage = {
+  sticker: WAMediaUpload
+  isAnimated?: boolean
+  width?: number
+  height?: number
+}
+```
+
+<ResponseField name="sticker" type="WAMediaUpload" required>
+  Sticker file (Buffer, stream, or URL)
+</ResponseField>
+
+<ResponseField name="isAnimated" type="boolean">
+  Whether sticker is animated
+</ResponseField>
+
+#### Document message
+
+```typescript
+type DocumentMessage = {
+  document: WAMediaUpload
+  mimetype: string
+  fileName?: string
+  caption?: string
+} & Contextable
+```
+
+<ResponseField name="document" type="WAMediaUpload" required>
+  Document file (Buffer, stream, or URL)
+</ResponseField>
+
+<ResponseField name="mimetype" type="string" required>
+  MIME type of the document
+</ResponseField>
+
+<ResponseField name="fileName" type="string">
+  Display name for the file
+</ResponseField>
+
+### WAMediaUpload
+
+Type for uploading media files.
+
+```typescript
+export type WAMediaUpload = 
+  | Buffer 
+  | WAMediaPayloadStream 
+  | WAMediaPayloadURL
+
+export type WAMediaPayloadURL = { url: URL | string }
+export type WAMediaPayloadStream = { stream: Readable }
+```
+
+## Special message types
+
+### Poll message
+
+```typescript
+export type PollMessageOptions = {
+  name: string
+  selectableCount?: number
+  values: string[]
+  messageSecret?: Uint8Array
+  toAnnouncementGroup?: boolean
+}
+```
+
+<ResponseField name="name" type="string" required>
+  Poll question
+</ResponseField>
+
+<ResponseField name="values" type="string[]" required>
+  Array of poll options
+</ResponseField>
+
+<ResponseField name="selectableCount" type="number">
+  Number of options users can select (default: 1)
+</ResponseField>
+
+<ResponseField name="messageSecret" type="Uint8Array">
+  32-byte secret to encrypt poll selections
+</ResponseField>
+
+### Event message
+
+```typescript
+export type EventMessageOptions = {
+  name: string
+  description?: string
+  startDate: Date
+  endDate?: Date
+  location?: WALocationMessage
+  call?: 'audio' | 'video'
+  isCancelled?: boolean
+  isScheduleCall?: boolean
+  extraGuestsAllowed?: boolean
+  messageSecret?: Uint8Array
+}
+```
+
+<ResponseField name="name" type="string" required>
+  Event title
+</ResponseField>
+
+<ResponseField name="startDate" type="Date" required>
+  Event start time
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Event description
+</ResponseField>
+
+<ResponseField name="endDate" type="Date">
+  Event end time
+</ResponseField>
+
+<ResponseField name="call" type="'audio' | 'video'">
+  Type of call event
+</ResponseField>
+
+## Message metadata types
+
+### MessageUpsertType
+
+Indicates how a message should be handled.
+
+```typescript
+export type MessageUpsertType = 'append' | 'notify'
+```
+
+- `notify`: New message requiring user notification
+- `append`: Add to history without notification
+
+### WAMessageUpdate
+
+Partial update to an existing message.
+
+```typescript
+export type WAMessageUpdate = { 
+  update: Partial<WAMessage>
+  key: WAMessageKey 
+}
+```
+
+### MessageReceiptType
+
+Types of message receipts.
+
+```typescript
+export type MessageReceiptType =
+  | 'read'
+  | 'read-self'
+  | 'hist_sync'
+  | 'peer_msg'
+  | 'sender'
+  | 'inactive'
+  | 'played'
+  | undefined
+```
+
+### MessageUserReceiptUpdate
+
+User-level read receipt update.
+
+```typescript
+export type MessageUserReceiptUpdate = { 
+  key: WAMessageKey
+  receipt: MessageUserReceipt 
+}
+
+export type MessageUserReceipt = proto.IUserReceipt
+```
+
+## Message generation options
+
+### MiscMessageGenerationOptions
+
+Options for generating messages.
+
+```typescript
+export type MiscMessageGenerationOptions = {
+  messageId?: string
+  timestamp?: Date
+  quoted?: WAMessage
+  ephemeralExpiration?: number | string
+  mediaUploadTimeoutMs?: number
+  statusJidList?: string[]
+  backgroundColor?: string
+  font?: number
+  broadcast?: boolean
+  useCachedGroupMetadata?: boolean
+}
+```
+
+<ResponseField name="messageId" type="string">
+  Custom message ID (auto-generated if not provided)
+</ResponseField>
+
+<ResponseField name="timestamp" type="Date">
+  Custom message timestamp
+</ResponseField>
+
+<ResponseField name="quoted" type="WAMessage">
+  Message to quote/reply to
+</ResponseField>
+
+<ResponseField name="ephemeralExpiration" type="number | string">
+  Disappearing message duration
+</ResponseField>
+
+<ResponseField name="mediaUploadTimeoutMs" type="number">
+  Timeout for media uploads
+</ResponseField>
+
+<ResponseField name="statusJidList" type="string[]">
+  JIDs for status@broadcast messages
+</ResponseField>
+
+### MessageRelayOptions
+
+Options for relaying messages.
+
+```typescript
+export type MessageRelayOptions = {
+  messageId?: string
+  participant?: { jid: string; count: number }
+  additionalAttributes?: { [_: string]: string }
+  additionalNodes?: BinaryNode[]
+  useUserDevicesCache?: boolean
+  useCachedGroupMetadata?: boolean
+  statusJidList?: string[]
+}
+```
+
+<ResponseField name="participant" type="{ jid: string; count: number }">
+  Send to specific participant (for retries)
+</ResponseField>
+
+<ResponseField name="additionalAttributes" type="object">
+  Extra attributes for WA binary node
+</ResponseField>
+
+<ResponseField name="useUserDevicesCache" type="boolean" default={true}>
+  Use cached device list
+</ResponseField>
+
+<ResponseField name="useCachedGroupMetadata" type="boolean" default={true}>
+  Use cached group metadata
+</ResponseField>

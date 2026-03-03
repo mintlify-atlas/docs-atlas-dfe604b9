@@ -1,0 +1,657 @@
+---
+title: Media utilities
+description: Utilities for uploading, downloading, and processing media files in WhatsApp messages
+---
+
+Media utilities provide functions for handling media uploads, downloads, encryption, and thumbnail generation.
+
+## downloadMediaMessage
+
+Downloads media from a WhatsApp message with automatic decryption.
+
+```typescript
+async function downloadMediaMessage<Type extends 'buffer' | 'stream'>(
+  message: WAMessage,
+  type: Type,
+  options: MediaDownloadOptions,
+  ctx?: DownloadMediaMessageContext
+): Promise<Type extends 'buffer' ? Buffer : Transform>
+```
+
+### Parameters
+
+<ParamField path="message" type="WAMessage" required>
+  The message containing the media to download.
+</ParamField>
+
+<ParamField path="type" type="'buffer' | 'stream'" required>
+  Whether to return the media as a Buffer or a readable stream.
+</ParamField>
+
+<ParamField path="options" type="MediaDownloadOptions" required>
+  Download configuration options.
+  
+  <ParamField path="startByte" type="number">
+    Starting byte offset for partial downloads.
+  </ParamField>
+  
+  <ParamField path="endByte" type="number">
+    Ending byte offset for partial downloads.
+  </ParamField>
+  
+  <ParamField path="options" type="RequestInit">
+    Additional fetch options (headers, dispatcher, etc.).
+  </ParamField>
+</ParamField>
+
+<ParamField path="ctx" type="DownloadMediaMessageContext">
+  Optional context for automatic media reupload on 404/410 errors.
+  
+  <ParamField path="reuploadRequest" type="function">
+    Function to request media reupload from sender.
+  </ParamField>
+  
+  <ParamField path="logger" type="ILogger">
+    Logger for download events.
+  </ParamField>
+</ParamField>
+
+### Returns
+
+A Promise resolving to either a Buffer or Transform stream depending on the `type` parameter.
+
+### Usage example
+
+```typescript
+import { downloadMediaMessage } from '@whiskeysockets/baileys'
+import { writeFile } from 'fs/promises'
+
+// Download as buffer
+const buffer = await downloadMediaMessage(
+  message,
+  'buffer',
+  {}
+)
+await writeFile('downloaded-image.jpg', buffer)
+
+// Download as stream for large files
+const stream = await downloadMediaMessage(
+  message,
+  'stream',
+  {}
+)
+
+stream.pipe(createWriteStream('video.mp4'))
+```
+
+<Note>
+  When downloading large media files (videos, documents), prefer using `'stream'` type to avoid loading the entire file into memory.
+</Note>
+
+## downloadContentFromMessage
+
+Downloads and decrypts media content from a downloadable message.
+
+```typescript
+async function downloadContentFromMessage(
+  message: DownloadableMessage,
+  type: MediaType,
+  opts?: MediaDownloadOptions
+): Promise<Transform>
+```
+
+### Parameters
+
+<ParamField path="message" type="DownloadableMessage" required>
+  Object containing `mediaKey`, `directPath`, or `url` for the media.
+</ParamField>
+
+<ParamField path="type" type="MediaType" required>
+  Type of media: `'image'`, `'video'`, `'audio'`, `'document'`, or `'sticker'`.
+</ParamField>
+
+<ParamField path="opts" type="MediaDownloadOptions">
+  Optional download options (range, headers, etc.).
+</ParamField>
+
+### Returns
+
+A Promise resolving to a Transform stream of decrypted media data.
+
+### Usage example
+
+```typescript
+import { downloadContentFromMessage } from '@whiskeysockets/baileys'
+
+const msg = message.message.imageMessage
+
+const stream = await downloadContentFromMessage(
+  msg,
+  'image'
+)
+
+// Convert stream to buffer
+const chunks = []
+for await (const chunk of stream) {
+  chunks.push(chunk)
+}
+const buffer = Buffer.concat(chunks)
+```
+
+## generateProfilePicture
+
+Generates a properly formatted profile picture from media input.
+
+```typescript
+async function generateProfilePicture(
+  mediaUpload: WAMediaUpload,
+  dimensions?: { width: number; height: number }
+): Promise<{ img: Buffer }>
+```
+
+### Parameters
+
+<ParamField path="mediaUpload" type="WAMediaUpload" required>
+  The image to process. Can be a Buffer, stream, or URL object.
+</ParamField>
+
+<ParamField path="dimensions" type="object">
+  Optional dimensions for the output image.
+  
+  <ParamField path="width" type="number">
+    Width in pixels (default: 640).
+  </ParamField>
+  
+  <ParamField path="height" type="number">
+    Height in pixels (default: 640).
+  </ParamField>
+</ParamField>
+
+### Returns
+
+A Promise resolving to an object containing the processed image buffer.
+
+### Usage example
+
+```typescript
+import { generateProfilePicture } from '@whiskeysockets/baileys'
+import { readFile } from 'fs/promises'
+
+const imageBuffer = await readFile('avatar.jpg')
+
+const { img } = await generateProfilePicture(imageBuffer, {
+  width: 640,
+  height: 640
+})
+
+// Use the generated image
+await sock.updateProfilePicture(sock.user.id, img)
+```
+
+<Note>
+  Requires either `sharp` or `jimp` image processing library to be installed. Sharp is preferred for better performance.
+</Note>
+
+## prepareWAMessageMedia
+
+Prepares media for sending in a WhatsApp message by encrypting and uploading it.
+
+```typescript
+async function prepareWAMessageMedia(
+  message: AnyMediaMessageContent,
+  options: MessageContentGenerationOptions
+): Promise<WAMessageContent>
+```
+
+### Parameters
+
+<ParamField path="message" type="AnyMediaMessageContent" required>
+  Media message content to prepare.
+  
+  <ParamField path="image" type="WAMediaUpload">
+    Image to send.
+  </ParamField>
+  
+  <ParamField path="video" type="WAMediaUpload">
+    Video to send.
+  </ParamField>
+  
+  <ParamField path="audio" type="WAMediaUpload">
+    Audio to send.
+  </ParamField>
+  
+  <ParamField path="document" type="WAMediaUpload">
+    Document to send.
+  </ParamField>
+  
+  <ParamField path="sticker" type="WAMediaUpload">
+    Sticker to send.
+  </ParamField>
+  
+  <ParamField path="caption" type="string">
+    Media caption text.
+  </ParamField>
+  
+  <ParamField path="fileName" type="string">
+    Filename for documents.
+  </ParamField>
+  
+  <ParamField path="mimetype" type="string">
+    MIME type (auto-detected if not provided).
+  </ParamField>
+  
+  <ParamField path="ptt" type="boolean">
+    Whether audio should be treated as voice note.
+  </ParamField>
+  
+  <ParamField path="ptv" type="boolean">
+    Whether video should be treated as video note.
+  </ParamField>
+  
+  <ParamField path="gifPlayback" type="boolean">
+    Whether video should play as GIF.
+  </ParamField>
+</ParamField>
+
+<ParamField path="options" type="MessageContentGenerationOptions" required>
+  Options including upload function and logger.
+</ParamField>
+
+### Returns
+
+A Promise resolving to formatted message content ready to send.
+
+### Usage example
+
+```typescript
+import { prepareWAMessageMedia, generateWAMessageFromContent } from '@whiskeysockets/baileys'
+import { readFile } from 'fs/promises'
+
+const imageBuffer = await readFile('photo.jpg')
+
+const prepared = await prepareWAMessageMedia(
+  {
+    image: imageBuffer,
+    caption: 'Check out this photo!'
+  },
+  {
+    upload: sock.waUploadToServer,
+    logger: myLogger
+  }
+)
+
+const message = generateWAMessageFromContent(
+  recipientJid,
+  prepared,
+  { userJid: sock.user.id }
+)
+
+await sock.relayMessage(recipientJid, message.message, {
+  messageId: message.key.id
+})
+```
+
+## encryptedStream
+
+Encrypts a media stream using AES-256-CBC for WhatsApp media upload.
+
+```typescript
+async function encryptedStream(
+  media: WAMediaUpload,
+  mediaType: MediaType,
+  options?: EncryptedStreamOptions
+): Promise<{
+  mediaKey: Buffer
+  encFilePath: string
+  originalFilePath?: string
+  mac: Buffer
+  fileEncSha256: Buffer
+  fileSha256: Buffer
+  fileLength: number
+}>
+```
+
+### Parameters
+
+<ParamField path="media" type="WAMediaUpload" required>
+  Media to encrypt (Buffer, stream, or URL).
+</ParamField>
+
+<ParamField path="mediaType" type="MediaType" required>
+  Type of media being encrypted.
+</ParamField>
+
+<ParamField path="options" type="EncryptedStreamOptions">
+  Encryption options.
+  
+  <ParamField path="saveOriginalFileIfRequired" type="boolean">
+    Whether to save original file for thumbnail generation.
+  </ParamField>
+  
+  <ParamField path="logger" type="ILogger">
+    Logger instance.
+  </ParamField>
+  
+  <ParamField path="opts" type="RequestInit">
+    Fetch options for remote URLs.
+  </ParamField>
+</ParamField>
+
+### Returns
+
+Object containing encryption keys, file paths, and checksums.
+
+### Usage example
+
+```typescript
+import { encryptedStream } from '@whiskeysockets/baileys'
+
+const result = await encryptedStream(
+  imageBuffer,
+  'image',
+  { logger: myLogger }
+)
+
+console.log('Encrypted file:', result.encFilePath)
+console.log('Media key:', result.mediaKey.toString('base64'))
+```
+
+## generateThumbnail
+
+Generates a thumbnail for image or video media.
+
+```typescript
+async function generateThumbnail(
+  file: string,
+  mediaType: 'video' | 'image',
+  options: { logger?: ILogger }
+): Promise<{
+  thumbnail?: string
+  originalImageDimensions?: { width: number; height: number }
+}>
+```
+
+### Parameters
+
+<ParamField path="file" type="string" required>
+  Path to the media file.
+</ParamField>
+
+<ParamField path="mediaType" type="'video' | 'image'" required>
+  Type of media to generate thumbnail for.
+</ParamField>
+
+<ParamField path="options" type="object">
+  Options including logger.
+</ParamField>
+
+### Returns
+
+Object containing base64-encoded thumbnail and original dimensions.
+
+### Usage example
+
+```typescript
+import { generateThumbnail } from '@whiskeysockets/baileys'
+
+const { thumbnail, originalImageDimensions } = await generateThumbnail(
+  '/tmp/video.mp4',
+  'video',
+  { logger: myLogger }
+)
+
+console.log('Thumbnail:', thumbnail)
+console.log('Original dimensions:', originalImageDimensions)
+```
+
+<Note>
+  For video thumbnails, requires `ffmpeg` to be installed on the system.
+</Note>
+
+## getAudioDuration
+
+Extracts the duration of an audio file in seconds.
+
+```typescript
+async function getAudioDuration(
+  buffer: Buffer | string | Readable
+): Promise<number | undefined>
+```
+
+### Parameters
+
+<ParamField path="buffer" type="Buffer | string | Readable" required>
+  Audio data as Buffer, file path, or readable stream.
+</ParamField>
+
+### Returns
+
+A Promise resolving to the audio duration in seconds, or `undefined` if unable to determine.
+
+### Usage example
+
+```typescript
+import { getAudioDuration } from '@whiskeysockets/baileys'
+
+const duration = await getAudioDuration('./voice-note.ogg')
+console.log(`Audio is ${duration} seconds long`)
+```
+
+## getAudioWaveform
+
+Generates a waveform visualization for audio files (used in voice notes).
+
+```typescript
+async function getAudioWaveform(
+  buffer: Buffer | string | Readable,
+  logger?: ILogger
+): Promise<Uint8Array | undefined>
+```
+
+### Parameters
+
+<ParamField path="buffer" type="Buffer | string | Readable" required>
+  Audio data to analyze.
+</ParamField>
+
+<ParamField path="logger" type="ILogger">
+  Optional logger for debugging.
+</ParamField>
+
+### Returns
+
+A Promise resolving to a Uint8Array of 64 samples representing the waveform.
+
+### Usage example
+
+```typescript
+import { getAudioWaveform } from '@whiskeysockets/baileys'
+
+const waveform = await getAudioWaveform(audioBuffer, logger)
+console.log('Waveform samples:', waveform.length) // 64
+```
+
+<Note>
+  Requires the `audio-decode` package to be installed for waveform generation.
+</Note>
+
+## mediaMessageSHA256B64
+
+Extracts the SHA256 hash of a media message in base64 format.
+
+```typescript
+function mediaMessageSHA256B64(
+  message: WAMessageContent
+): string | undefined
+```
+
+### Parameters
+
+<ParamField path="message" type="WAMessageContent" required>
+  The message containing media.
+</ParamField>
+
+### Returns
+
+Base64-encoded SHA256 hash of the media file, or `undefined` if not available.
+
+### Usage example
+
+```typescript
+import { mediaMessageSHA256B64 } from '@whiskeysockets/baileys'
+
+const hash = mediaMessageSHA256B64(message.message)
+console.log('Media hash:', hash)
+```
+
+## getMediaKeys
+
+Derives encryption keys from a media key using HKDF.
+
+```typescript
+async function getMediaKeys(
+  buffer: Uint8Array | string | null | undefined,
+  mediaType: MediaType
+): Promise<MediaDecryptionKeyInfo>
+```
+
+### Parameters
+
+<ParamField path="buffer" type="Uint8Array | string | null | undefined" required>
+  The media key (can be base64 string or buffer).
+</ParamField>
+
+<ParamField path="mediaType" type="MediaType" required>
+  Type of media the key is for.
+</ParamField>
+
+### Returns
+
+Object containing derived encryption keys:
+
+<ResponseField name="MediaDecryptionKeyInfo" type="object">
+  <ResponseField name="iv" type="Buffer">
+    Initialization vector (16 bytes).
+  </ResponseField>
+  
+  <ResponseField name="cipherKey" type="Buffer">
+    AES cipher key (32 bytes).
+  </ResponseField>
+  
+  <ResponseField name="macKey" type="Buffer">
+    HMAC key (32 bytes).
+  </ResponseField>
+</ResponseField>
+
+### Usage example
+
+```typescript
+import { getMediaKeys } from '@whiskeysockets/baileys'
+
+const keys = await getMediaKeys(
+  message.message.imageMessage.mediaKey,
+  'image'
+)
+
+console.log('IV:', keys.iv)
+console.log('Cipher key:', keys.cipherKey)
+```
+
+## extensionForMediaMessage
+
+Determines the file extension for a media message based on its MIME type.
+
+```typescript
+function extensionForMediaMessage(
+  message: WAMessageContent
+): string
+```
+
+### Parameters
+
+<ParamField path="message" type="WAMessageContent" required>
+  The media message.
+</ParamField>
+
+### Returns
+
+File extension string (e.g., `'jpg'`, `'mp4'`, `'pdf'`).
+
+### Usage example
+
+```typescript
+import { extensionForMediaMessage, downloadMediaMessage } from '@whiskeysockets/baileys'
+import { writeFile } from 'fs/promises'
+
+const buffer = await downloadMediaMessage(message, 'buffer', {})
+const ext = extensionForMediaMessage(message.message)
+
+await writeFile(`media.${ext}`, buffer)
+```
+
+## toBuffer
+
+Converts a readable stream to a Buffer.
+
+```typescript
+async function toBuffer(stream: Readable): Promise<Buffer>
+```
+
+### Parameters
+
+<ParamField path="stream" type="Readable" required>
+  The stream to convert.
+</ParamField>
+
+### Returns
+
+A Promise resolving to a Buffer containing all stream data.
+
+### Usage example
+
+```typescript
+import { toBuffer } from '@whiskeysockets/baileys'
+import { createReadStream } from 'fs'
+
+const stream = createReadStream('file.txt')
+const buffer = await toBuffer(stream)
+
+console.log('File contents:', buffer.toString())
+```
+
+## toReadable
+
+Converts a Buffer to a readable stream.
+
+```typescript
+function toReadable(buffer: Buffer): Readable
+```
+
+### Parameters
+
+<ParamField path="buffer" type="Buffer" required>
+  The buffer to convert.
+</ParamField>
+
+### Returns
+
+A Readable stream.
+
+### Usage example
+
+```typescript
+import { toReadable } from '@whiskeysockets/baileys'
+
+const buffer = Buffer.from('Hello World')
+const stream = toReadable(buffer)
+
+stream.pipe(process.stdout)
+```
+
+## Related types
+
+- `WAMediaUpload` - Union type for media input (Buffer, stream, or URL)
+- `MediaType` - `'image' | 'video' | 'audio' | 'document' | 'sticker'`
+- `MediaDownloadOptions` - Options for media downloads
+- `DownloadableMessage` - Message interface with download properties
+- `MediaDecryptionKeyInfo` - Encryption keys for media

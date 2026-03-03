@@ -1,0 +1,257 @@
+---
+title: Managing participants
+description: Adding, removing, promoting, and demoting group participants
+---
+
+Group admins can manage participants by adding or removing members and changing their admin status.
+
+## Adding and removing participants
+
+The `groupParticipantsUpdate` function handles all participant management operations:
+
+```ts
+// id & people to add to the group (will throw error if it fails)
+await sock.groupParticipantsUpdate(
+    jid,
+    ['abcd@s.whatsapp.net', 'efgh@s.whatsapp.net'],
+    'add' // replace this parameter with 'remove' or 'demote' or 'promote'
+)
+```
+
+<ParamField path="jid" type="string" required>
+  The group JID
+</ParamField>
+
+<ParamField path="participants" type="string[]" required>
+  Array of participant JIDs to update (must use `@s.whatsapp.net` format)
+</ParamField>
+
+<ParamField path="action" type="ParticipantAction" required>
+  The action to perform: `'add'`, `'remove'`, `'promote'`, or `'demote'`
+</ParamField>
+
+## Participant actions
+
+### Adding members
+
+Add new participants to the group:
+
+```ts
+const result = await sock.groupParticipantsUpdate(
+    jid,
+    ['1234@s.whatsapp.net', '5678@s.whatsapp.net'],
+    'add'
+)
+```
+
+The function returns an array of results for each participant:
+
+```ts
+[
+  { status: '200', jid: '1234@s.whatsapp.net', content: BinaryNode },
+  { status: '403', jid: '5678@s.whatsapp.net', content: BinaryNode }
+]
+```
+
+Status codes:
+- `'200'` - Successfully added
+- `'403'` - Forbidden (user privacy settings may prevent adding)
+- `'408'` - Request timeout
+- Other error codes indicate various failure reasons
+
+<Note>
+  Users with strict privacy settings may not be added to groups by non-contacts. In such cases, you'll receive a `'403'` status code and the user won't be added.
+</Note>
+
+### Removing members
+
+Remove participants from the group:
+
+```ts
+const result = await sock.groupParticipantsUpdate(
+    jid,
+    ['1234@s.whatsapp.net'],
+    'remove'
+)
+```
+
+<Warning>
+  You cannot remove the group owner/creator. Attempting to do so will fail with an error.
+</Warning>
+
+### Promoting to admin
+
+Grant admin privileges to regular members:
+
+```ts
+const result = await sock.groupParticipantsUpdate(
+    jid,
+    ['1234@s.whatsapp.net', '5678@s.whatsapp.net'],
+    'promote'
+)
+```
+
+After promotion, the users will have admin capabilities:
+- Add/remove participants (if group settings allow)
+- Promote/demote other members
+- Change group subject and description
+- Modify group settings
+- Manage invite codes
+
+<Note>
+  Only existing group admins can promote members to admin status.
+</Note>
+
+### Demoting admins
+
+Remove admin privileges from group admins:
+
+```ts
+const result = await sock.groupParticipantsUpdate(
+    jid,
+    ['1234@s.whatsapp.net'],
+    'demote'
+)
+```
+
+Demoted users become regular members and lose all admin privileges.
+
+<Warning>
+  You cannot demote the group owner/creator (superadmin). Attempting to demote the owner will fail.
+</Warning>
+
+## Handling results
+
+All participant update operations return an array of results showing the outcome for each participant:
+
+```ts
+const results = await sock.groupParticipantsUpdate(
+    jid,
+    ['user1@s.whatsapp.net', 'user2@s.whatsapp.net', 'user3@s.whatsapp.net'],
+    'add'
+)
+
+results.forEach(result => {
+    if (result.status === '200') {
+        console.log(`Successfully added ${result.jid}`)
+    } else {
+        console.log(`Failed to add ${result.jid}: ${result.status}`)
+    }
+})
+```
+
+<Accordion title="Common error codes">
+  - **200** - Success
+  - **403** - Forbidden (privacy settings, not enough permissions, etc.)
+  - **404** - User not found
+  - **408** - Request timeout
+  - **409** - Conflict (e.g., user already in group for 'add' action)
+  - **500** - Internal server error
+</Accordion>
+
+## Batch operations
+
+You can update multiple participants in a single call for better performance:
+
+```ts
+// Add multiple users at once
+await sock.groupParticipantsUpdate(
+    jid,
+    [
+        '1111@s.whatsapp.net',
+        '2222@s.whatsapp.net',
+        '3333@s.whatsapp.net',
+        '4444@s.whatsapp.net'
+    ],
+    'add'
+)
+
+// Promote multiple users to admin
+await sock.groupParticipantsUpdate(
+    jid,
+    [
+        '1111@s.whatsapp.net',
+        '2222@s.whatsapp.net'
+    ],
+    'promote'
+)
+```
+
+<Note>
+  Batch operations are processed as a single request to WhatsApp's servers, making them more efficient than individual calls.
+</Note>
+
+## Permission requirements
+
+Different actions have different permission requirements:
+
+| Action | Required Role | Notes |
+|--------|---------------|-------|
+| Add participants | Admin* | Depends on group's member add mode setting |
+| Remove participants | Admin | Cannot remove the owner |
+| Promote to admin | Admin | Only admins can promote |
+| Demote admin | Admin | Cannot demote the owner |
+
+*If the group's `memberAddMode` is set to `'all_member_add'`, regular members can also add participants. See [group settings](/groups/settings#member-add-mode) for more details.
+
+## Best practices
+
+<Steps>
+  <Step title="Check permissions first">
+    Before attempting participant updates, verify that your bot/user has admin privileges by checking the group metadata.
+  </Step>
+  
+  <Step title="Handle errors gracefully">
+    Always check the status codes in the response to handle failures appropriately.
+  </Step>
+  
+  <Step title="Respect privacy settings">
+    Be prepared for some users to have privacy settings that prevent them from being added to groups.
+  </Step>
+  
+  <Step title="Use batch operations">
+    When updating multiple participants, use a single call with an array rather than multiple individual calls.
+  </Step>
+</Steps>
+
+## Example: Complete participant management
+
+```ts
+// Check if we're an admin
+const metadata = await sock.groupMetadata(groupJid)
+const me = metadata.participants.find(p => p.id === sock.user.id)
+
+if (!me?.admin) {
+    console.log('Not an admin, cannot manage participants')
+    return
+}
+
+// Add new members
+const addResults = await sock.groupParticipantsUpdate(
+    groupJid,
+    ['newuser1@s.whatsapp.net', 'newuser2@s.whatsapp.net'],
+    'add'
+)
+
+// Check which users were successfully added
+const successfullyAdded = addResults
+    .filter(r => r.status === '200')
+    .map(r => r.jid)
+
+if (successfullyAdded.length > 0) {
+    console.log('Successfully added:', successfullyAdded)
+    
+    // Promote one of them to admin
+    await sock.groupParticipantsUpdate(
+        groupJid,
+        [successfullyAdded[0]],
+        'promote'
+    )
+}
+
+// Handle failed additions
+const failed = addResults.filter(r => r.status !== '200')
+if (failed.length > 0) {
+    console.log('Failed to add:', failed)
+}
+```

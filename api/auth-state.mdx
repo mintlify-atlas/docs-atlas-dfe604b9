@@ -1,0 +1,542 @@
+---
+title: Authentication state
+description: Types and interfaces for managing WhatsApp authentication credentials
+---
+
+## Overview
+
+Authentication state management is a critical part of using Baileys. The authentication state consists of credentials (creds) and encryption keys that allow you to maintain a persistent session with WhatsApp.
+
+## AuthenticationState
+
+The main authentication state interface passed to `makeWASocket`.
+
+```typescript
+type AuthenticationState = {
+  creds: AuthenticationCreds
+  keys: SignalKeyStore
+}
+```
+
+<ParamField path="creds" type="AuthenticationCreds" required>
+  Authentication credentials containing identity keys, registration info, and account metadata
+</ParamField>
+
+<ParamField path="keys" type="SignalKeyStore" required>
+  Key store for managing Signal protocol keys (pre-keys, sessions, sender keys, etc.)
+</ParamField>
+
+## AuthenticationCreds
+
+Contains all credential data needed to authenticate with WhatsApp.
+
+```typescript
+type AuthenticationCreds = SignalCreds & {
+  readonly noiseKey: KeyPair
+  readonly pairingEphemeralKeyPair: KeyPair
+  advSecretKey: string
+  
+  me?: Contact
+  account?: proto.IADVSignedDeviceIdentity
+  signalIdentities?: SignalIdentity[]
+  myAppStateKeyId?: string
+  firstUnuploadedPreKeyId: number
+  nextPreKeyId: number
+  
+  lastAccountSyncTimestamp?: number
+  platform?: string
+  
+  processedHistoryMessages: MinimalMessage[]
+  accountSyncCounter: number
+  accountSettings: AccountSettings
+  registered: boolean
+  pairingCode: string | undefined
+  lastPropHash: string | undefined
+  routingInfo: Buffer | undefined
+  additionalData?: any | undefined
+}
+```
+
+### Core identity fields
+
+<ParamField path="noiseKey" type="KeyPair" required>
+  Noise protocol key pair for secure channel establishment
+  
+  ```typescript
+  type KeyPair = { 
+    public: Uint8Array
+    private: Uint8Array 
+  }
+  ```
+</ParamField>
+
+<ParamField path="pairingEphemeralKeyPair" type="KeyPair" required>
+  Ephemeral key pair used during pairing process
+</ParamField>
+
+<ParamField path="advSecretKey" type="string" required>
+  Secret key for Account Device Verification (ADV)
+</ParamField>
+
+<ParamField path="signedIdentityKey" type="KeyPair" required>
+  Signed identity key pair (inherited from `SignalCreds`)
+</ParamField>
+
+<ParamField path="signedPreKey" type="SignedKeyPair" required>
+  Signed pre-key for initial key exchange (inherited from `SignalCreds`)
+  
+  ```typescript
+  type SignedKeyPair = {
+    keyPair: KeyPair
+    signature: Uint8Array
+    keyId: number
+    timestampS?: number
+  }
+  ```
+</ParamField>
+
+<ParamField path="registrationId" type="number" required>
+  Unique registration ID for this device (inherited from `SignalCreds`)
+</ParamField>
+
+### Account information
+
+<ParamField path="me" type="Contact">
+  Information about the authenticated user
+  
+  ```typescript
+  type Contact = {
+    id: string
+    name?: string
+    notify?: string
+    verifiedName?: string
+    imgUrl?: string
+    status?: string
+  }
+  ```
+</ParamField>
+
+<ParamField path="account" type="proto.IADVSignedDeviceIdentity">
+  Signed device identity for account verification
+</ParamField>
+
+<ParamField path="registered" type="boolean" required>
+  Whether the device is registered with WhatsApp
+</ParamField>
+
+<ParamField path="platform" type="string">
+  Platform identifier (e.g., 'web', 'desktop')
+</ParamField>
+
+### Pre-key management
+
+<ParamField path="firstUnuploadedPreKeyId" type="number" required>
+  ID of the first pre-key that hasn't been uploaded to WhatsApp servers
+</ParamField>
+
+<ParamField path="nextPreKeyId" type="number" required>
+  Next pre-key ID to generate
+</ParamField>
+
+### Signal protocol
+
+<ParamField path="signalIdentities" type="SignalIdentity[]">
+  List of trusted Signal identities
+  
+  ```typescript
+  type SignalIdentity = {
+    identifier: ProtocolAddress
+    identifierKey: Uint8Array
+  }
+  
+  type ProtocolAddress = {
+    name: string // JID
+    deviceId: number
+  }
+  ```
+</ParamField>
+
+### Sync and history
+
+<ParamField path="processedHistoryMessages" type="MinimalMessage[]" required>
+  List of history messages that have been processed
+</ParamField>
+
+<ParamField path="accountSyncCounter" type="number" required>
+  Number of times history and app state have been synced
+</ParamField>
+
+<ParamField path="lastAccountSyncTimestamp" type="number">
+  Timestamp of the last account sync
+</ParamField>
+
+### Account settings
+
+<ParamField path="accountSettings" type="AccountSettings" required>
+  User account settings
+  
+  ```typescript
+  type AccountSettings = {
+    unarchiveChats: boolean
+    defaultDisappearingMode?: Pick<
+      proto.IConversation, 
+      'ephemeralExpiration' | 'ephemeralSettingTimestamp'
+    >
+  }
+  ```
+  
+  <Expandable title="AccountSettings properties">
+    <ResponseField name="unarchiveChats" type="boolean">
+      Whether to unarchive chats when a new message is received
+    </ResponseField>
+    
+    <ResponseField name="defaultDisappearingMode" type="object">
+      Default disappearing message settings for new conversations
+      
+      - `ephemeralExpiration`: Duration in seconds
+      - `ephemeralSettingTimestamp`: When the setting was applied
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+### App state
+
+<ParamField path="myAppStateKeyId" type="string">
+  ID of the current app state sync key
+</ParamField>
+
+### Pairing
+
+<ParamField path="pairingCode" type="string | undefined" required>
+  Current pairing code if in pairing mode
+</ParamField>
+
+### Internal fields
+
+<ParamField path="lastPropHash" type="string | undefined" required>
+  Hash of the last received props
+</ParamField>
+
+<ParamField path="routingInfo" type="Buffer | undefined" required>
+  Routing information for message delivery
+</ParamField>
+
+<ParamField path="additionalData" type="any | undefined">
+  Additional data for custom extensions
+</ParamField>
+
+## SignalKeyStore
+
+Interface for storing and retrieving Signal protocol keys.
+
+```typescript
+type SignalKeyStore = {
+  get<T extends keyof SignalDataTypeMap>(
+    type: T, 
+    ids: string[]
+  ): Awaitable<{ [id: string]: SignalDataTypeMap[T] }>
+  
+  set(data: SignalDataSet): Awaitable<void>
+  
+  clear?(): Awaitable<void>
+}
+```
+
+<ParamField path="get" type="function" required>
+  Retrieve keys of a specific type by their IDs
+  
+  ```typescript
+  // Example usage
+  const sessions = await keys.get('session', ['jid_1', 'jid_2'])
+  ```
+</ParamField>
+
+<ParamField path="set" type="function" required>
+  Store or update keys in the key store
+  
+  ```typescript
+  // Example usage
+  await keys.set({
+    'pre-key': {
+      '1': { public: ..., private: ... },
+      '2': { public: ..., private: ... }
+    },
+    'session': {
+      'jid_deviceId': sessionData
+    }
+  })
+  ```
+</ParamField>
+
+<ParamField path="clear" type="() => Awaitable<void>">
+  Optional method to clear all data from the key store
+</ParamField>
+
+## SignalDataTypeMap
+
+Defines all the different types of data stored in the key store.
+
+```typescript
+type SignalDataTypeMap = {
+  'pre-key': KeyPair
+  'session': Uint8Array
+  'sender-key': Uint8Array
+  'sender-key-memory': { [jid: string]: boolean }
+  'app-state-sync-key': proto.Message.IAppStateSyncKeyData
+  'app-state-sync-version': LTHashState
+  'lid-mapping': string
+  'device-list': string[]
+  'tctoken': { token: Buffer; timestamp?: string }
+  'identity-key': Uint8Array
+}
+```
+
+<Expandable title="Data type descriptions">
+  <ResponseField name="pre-key" type="KeyPair">
+    Pre-keys for initial key exchange
+  </ResponseField>
+  
+  <ResponseField name="session" type="Uint8Array">
+    Serialized session state for encrypted communication
+  </ResponseField>
+  
+  <ResponseField name="sender-key" type="Uint8Array">
+    Sender keys for group message encryption
+  </ResponseField>
+  
+  <ResponseField name="sender-key-memory" type="{ [jid: string]: boolean }">
+    In-memory cache of sender keys
+  </ResponseField>
+  
+  <ResponseField name="app-state-sync-key" type="proto.Message.IAppStateSyncKeyData">
+    Keys for syncing app state (settings, contacts, etc.)
+  </ResponseField>
+  
+  <ResponseField name="app-state-sync-version" type="LTHashState">
+    Version information for app state sync
+  </ResponseField>
+  
+  <ResponseField name="lid-mapping" type="string">
+    Mapping between phone numbers and LIDs (Lidded IDs)
+  </ResponseField>
+  
+  <ResponseField name="device-list" type="string[]">
+    List of devices for a user
+  </ResponseField>
+  
+  <ResponseField name="tctoken" type="{ token: Buffer; timestamp?: string }">
+    Temporary connection tokens
+  </ResponseField>
+  
+  <ResponseField name="identity-key" type="Uint8Array">
+    Identity keys for contacts
+  </ResponseField>
+</Expandable>
+
+## SignalDataSet
+
+Type for batch key operations.
+
+```typescript
+type SignalDataSet = {
+  [T in keyof SignalDataTypeMap]?: {
+    [id: string]: SignalDataTypeMap[T] | null
+  }
+}
+```
+
+Used when setting multiple keys at once. Setting a key to `null` deletes it.
+
+```typescript
+// Example: Delete a session and add a pre-key
+await keys.set({
+  'session': {
+    'old_session_id': null // Delete
+  },
+  'pre-key': {
+    '10': { public: ..., private: ... } // Add
+  }
+})
+```
+
+## Creating authentication state
+
+Baileys provides helper functions to create and manage authentication state:
+
+### Using multi-file auth state
+
+```typescript
+import { useMultiFileAuthState } from '@whiskeysockets/baileys'
+
+const { state, saveCreds } = await useMultiFileAuthState('auth_info_folder')
+
+const sock = makeWASocket({
+  auth: state
+})
+
+// Save credentials whenever they're updated
+sock.ev.on('creds.update', saveCreds)
+```
+
+This stores authentication data in JSON files in the specified folder:
+- `creds.json` - Authentication credentials
+- `app-state-sync-version-*.json` - App state versions
+- `app-state-sync-key-*.json` - App state sync keys
+- And other key files
+
+### Custom auth state implementation
+
+You can implement your own auth state storage (e.g., database-backed):
+
+```typescript
+import { 
+  AuthenticationState, 
+  SignalDataTypeMap,
+  initAuthCreds,
+  BufferJSON
+} from '@whiskeysockets/baileys'
+
+const useMongoAuthState = async (): Promise<{
+  state: AuthenticationState
+  saveCreds: () => Promise<void>
+}> => {
+  // Load creds from database
+  let creds = await db.creds.findOne({ _id: 'main' })
+  if(!creds) {
+    creds = initAuthCreds()
+    await db.creds.insertOne({ _id: 'main', ...creds })
+  }
+  
+  return {
+    state: {
+      creds,
+      keys: {
+        get: async (type, ids) => {
+          const data = {}
+          const keys = await db.keys.find({
+            type,
+            id: { $in: ids }
+          })
+          
+          for(const key of keys) {
+            data[key.id] = key.value
+          }
+          
+          return data
+        },
+        
+        set: async (data) => {
+          const tasks = []
+          
+          for(const type in data) {
+            for(const id in data[type]) {
+              const value = data[type][id]
+              
+              if(value === null) {
+                // Delete key
+                tasks.push(
+                  db.keys.deleteOne({ type, id })
+                )
+              } else {
+                // Upsert key
+                tasks.push(
+                  db.keys.updateOne(
+                    { type, id },
+                    { $set: { value } },
+                    { upsert: true }
+                  )
+                )
+              }
+            }
+          }
+          
+          await Promise.all(tasks)
+        }
+      }
+    },
+    
+    saveCreds: async () => {
+      await db.creds.updateOne(
+        { _id: 'main' },
+        { $set: creds }
+      )
+    }
+  }
+}
+
+// Usage
+const { state, saveCreds } = await useMongoAuthState()
+const sock = makeWASocket({ auth: state })
+sock.ev.on('creds.update', saveCreds)
+```
+
+## Helper types
+
+### KeyPair
+
+```typescript
+type KeyPair = { 
+  public: Uint8Array
+  private: Uint8Array 
+}
+```
+
+A standard public/private key pair.
+
+### SignedKeyPair
+
+```typescript
+type SignedKeyPair = {
+  keyPair: KeyPair
+  signature: Uint8Array
+  keyId: number
+  timestampS?: number
+}
+```
+
+A key pair with a signature for verification.
+
+### LTHashState
+
+```typescript
+type LTHashState = {
+  version: number
+  hash: Buffer
+  indexValueMap: {
+    [indexMacBase64: string]: { 
+      valueMac: Uint8Array | Buffer 
+    }
+  }
+}
+```
+
+State for LT (Long-Term) hash verification in app state sync.
+
+## Best practices
+
+<Note>
+  **Always save credentials**: Listen to the `creds.update` event and persist credentials whenever they change. Failing to do so will require re-authentication.
+</Note>
+
+<Note>
+  **Secure storage**: Store authentication data securely. Anyone with access to these credentials can impersonate your WhatsApp session.
+</Note>
+
+<Note>
+  **Backup keys**: Consider backing up your authentication state regularly. Loss of these keys means losing access to the session.
+</Note>
+
+```typescript
+// Good: Save on every update
+sock.ev.on('creds.update', saveCreds)
+
+// Bad: Not saving credentials
+sock.ev.on('creds.update', () => {
+  // credentials not saved - session will be lost on restart!
+})
+```
+
+## See also
+
+- [makeWASocket](/api/make-wa-socket) - Creating socket connections
+- [SocketConfig](/api/socket-config) - Socket configuration options

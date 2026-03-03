@@ -1,0 +1,483 @@
+---
+title: Message modification
+description: Edit, delete, react to, star, and pin messages in WhatsApp
+---
+
+Baileys supports various message modification operations including editing, deleting, reacting, starring, and pinning messages.
+
+## Editing messages
+
+Edit the content of messages you've sent:
+
+```typescript
+const msg = await sock.sendMessage(jid, { text: 'Original message' })
+
+// Edit the message
+await sock.sendMessage(jid, {
+  text: 'Updated message text',
+  edit: msg.key
+})
+```
+
+<Note>
+  You can only edit messages you sent (`fromMe: true`). WhatsApp has a time limit for editing messages (typically 15 minutes).
+</Note>
+
+### Edit with message key
+
+If you have the message key from storage:
+
+```typescript
+const messageKey = {
+  remoteJid: jid,
+  fromMe: true,
+  id: 'MESSAGE_ID'
+}
+
+await sock.sendMessage(jid, {
+  text: 'New text content',
+  edit: messageKey
+})
+```
+
+## Deleting messages
+
+### Delete for everyone
+
+Delete a message for all participants in the chat:
+
+```typescript
+const msg = await sock.sendMessage(jid, { text: 'Message to delete' })
+
+// Delete for everyone
+await sock.sendMessage(jid, { delete: msg.key })
+```
+
+<Warning>
+  You can only delete messages you sent within a certain time window (approximately 2 days). Older messages cannot be deleted for everyone.
+</Warning>
+
+### Delete message from storage
+
+Use with a stored message key:
+
+```typescript
+const key = {
+  remoteJid: jid,
+  fromMe: true,
+  id: messageId
+}
+
+await sock.sendMessage(jid, { delete: key })
+```
+
+### Delete for yourself only
+
+To delete messages for yourself only, use `chatModify`:
+
+```typescript
+await sock.chatModify(
+  {
+    clear: {
+      messages: [
+        {
+          id: 'MESSAGE_ID',
+          fromMe: true,
+          timestamp: '1654823909'
+        }
+      ]
+    }
+  },
+  jid
+)
+```
+
+### Delete as admin (groups)
+
+Group admins can delete any message:
+
+```typescript
+// Delete someone else's message in a group (requires admin)
+const messageKey = {
+  remoteJid: groupJid,
+  fromMe: false,
+  id: messageId,
+  participant: senderJid
+}
+
+await sock.sendMessage(groupJid, { delete: messageKey })
+```
+
+## Reactions
+
+React to messages with emojis:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    react: {
+      text: '❤️', // Emoji reaction
+      key: message.key // Message to react to
+    }
+  }
+)
+```
+
+### Remove a reaction
+
+Use an empty string to remove your reaction:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    react: {
+      text: '', // Empty string removes reaction
+      key: message.key
+    }
+  }
+)
+```
+
+### Common reactions
+
+```typescript
+const reactions = {
+  like: '👍',
+  love: '❤️',
+  laugh: '😂',
+  surprised: '😮',
+  sad: '😢',
+  angry: '😠'
+}
+
+await sock.sendMessage(
+  jid,
+  {
+    react: {
+      text: reactions.love,
+      key: message.key
+    }
+  }
+)
+```
+
+## Pinning messages
+
+Pin important messages in chats:
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    pin: {
+      type: 1, // 1 to pin, 0 to unpin
+      time: 86400, // Duration in seconds (24 hours)
+      key: message.key
+    }
+  }
+)
+```
+
+### Pin durations
+
+| Duration | Seconds |
+|----------|----------|
+| 24 hours | 86400 |
+| 7 days   | 604800 |
+| 30 days  | 2592000 |
+
+### Pin for 7 days
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    pin: {
+      type: 1,
+      time: 604800, // 7 days
+      key: message.key
+    }
+  }
+)
+```
+
+### Unpin a message
+
+```typescript
+await sock.sendMessage(
+  jid,
+  {
+    pin: {
+      type: 0, // 0 to unpin
+      time: 0,
+      key: message.key
+    }
+  }
+)
+```
+
+## Starring messages
+
+Star messages for later reference:
+
+```typescript
+// Star a message
+await sock.chatModify(
+  {
+    star: {
+      messages: [{ id: messageId, fromMe: true }],
+      star: true
+    }
+  },
+  jid
+)
+
+// Unstar a message
+await sock.chatModify(
+  {
+    star: {
+      messages: [{ id: messageId, fromMe: true }],
+      star: false
+    }
+  },
+  jid
+)
+```
+
+### Star multiple messages
+
+```typescript
+await sock.chatModify(
+  {
+    star: {
+      messages: [
+        { id: 'MESSAGE_ID_1', fromMe: true },
+        { id: 'MESSAGE_ID_2', fromMe: false },
+        { id: 'MESSAGE_ID_3', fromMe: true }
+      ],
+      star: true
+    }
+  },
+  jid
+)
+```
+
+## Receiving modification events
+
+### Message edits
+
+```typescript
+sock.ev.on('messages.update', (updates) => {
+  for (const update of updates) {
+    if (update.update.message) {
+      console.log('Message edited:', update.key.id)
+      console.log('New content:', update.update.message)
+    }
+  }
+})
+```
+
+### Message deletions
+
+```typescript
+sock.ev.on('messages.update', (updates) => {
+  for (const update of updates) {
+    if (update.update.messageStubType === 1) { // REVOKE
+      console.log('Message deleted:', update.key.id)
+    }
+  }
+})
+```
+
+### Reactions received
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (m.message?.reactionMessage) {
+    const reaction = m.message.reactionMessage
+    console.log('Reaction emoji:', reaction.text)
+    console.log('Reacted to:', reaction.key.id)
+    console.log('From:', m.key.participant || m.key.remoteJid)
+    
+    if (reaction.text === '') {
+      console.log('Reaction removed')
+    }
+  }
+})
+```
+
+## Complete modification workflow
+
+```typescript
+// Send a message
+const msg = await sock.sendMessage(jid, { text: 'Hello!' })
+console.log('Sent message:', msg.key.id)
+
+// Edit the message
+await sock.sendMessage(jid, {
+  text: 'Hello, updated!',
+  edit: msg.key
+})
+console.log('Edited message')
+
+// React to it
+await sock.sendMessage(jid, {
+  react: {
+    text: '👍',
+    key: msg.key
+  }
+})
+console.log('Added reaction')
+
+// Pin it
+await sock.sendMessage(jid, {
+  pin: {
+    type: 1,
+    time: 86400,
+    key: msg.key
+  }
+})
+console.log('Pinned message')
+
+// Star it
+await sock.chatModify(
+  {
+    star: {
+      messages: [{ id: msg.key.id!, fromMe: true }],
+      star: true
+    }
+  },
+  jid
+)
+console.log('Starred message')
+
+// Later: delete it
+await sock.sendMessage(jid, { delete: msg.key })
+console.log('Deleted message')
+```
+
+## Error handling
+
+```typescript
+try {
+  await sock.sendMessage(jid, {
+    text: 'Updated text',
+    edit: messageKey
+  })
+} catch (error) {
+  if (error.message.includes('edit time expired')) {
+    console.log('Cannot edit: time limit exceeded')
+  } else if (error.message.includes('not found')) {
+    console.log('Message not found')
+  } else {
+    console.error('Edit failed:', error)
+  }
+}
+```
+
+## Limitations and restrictions
+
+<Warning>
+  **Time limits:**
+  - **Editing**: ~15 minutes after sending
+  - **Deleting for everyone**: ~2 days after sending
+  - **Reactions**: No time limit
+  - **Pinning**: Available anytime
+</Warning>
+
+<Warning>
+  **Permissions:**
+  - You can only edit/delete your own messages
+  - Group admins can delete any message in their groups
+  - Anyone can react to any message
+  - Anyone can pin/unpin in individual chats; group settings may restrict pinning
+</Warning>
+
+## Best practices
+
+<Tip>
+  - Store message keys when you send messages for later modification
+  - Check if enough time has passed before attempting edits/deletes
+  - Handle errors gracefully when modifications fail
+  - Validate emoji reactions before sending (use valid Unicode emojis)
+  - Consider the user experience when pinning messages (don't overuse)
+  - Implement a local database to track starred messages
+</Tip>
+
+## Advanced usage
+
+### Modify message with quote
+
+```typescript
+// Edit and quote in one operation (for context)
+const original = await getMessage(originalId)
+
+await sock.sendMessage(
+  jid,
+  {
+    text: 'Correction: updated information',
+    edit: messageToEdit.key
+  },
+  { quoted: original }
+)
+```
+
+### Batch delete messages
+
+```typescript
+const messagesToDelete = [msg1, msg2, msg3]
+
+for (const msg of messagesToDelete) {
+  try {
+    await sock.sendMessage(jid, { delete: msg.key })
+    await new Promise(resolve => setTimeout(resolve, 500)) // Rate limit
+  } catch (error) {
+    console.error('Failed to delete:', msg.key.id, error)
+  }
+}
+```
+
+### Auto-react to specific messages
+
+```typescript
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  const m = messages[0]
+  
+  if (m.key.fromMe) return // Don't react to own messages
+  
+  const text = m.message?.conversation || m.message?.extendedTextMessage?.text
+  
+  if (text?.toLowerCase().includes('thanks')) {
+    await sock.sendMessage(
+      m.key.remoteJid!,
+      {
+        react: {
+          text: '😊',
+          key: m.key
+        }
+      }
+    )
+  }
+})
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Sending messages" icon="paper-plane" href="/messaging/sending-messages">
+    Learn the core sendMessage API
+  </Card>
+  <Card title="Receiving messages" icon="download" href="/messaging/receiving-messages">
+    Handle incoming messages and events
+  </Card>
+  <Card title="Text messages" icon="message" href="/messaging/text-messages">
+    Work with text, mentions, and quotes
+  </Card>
+  <Card title="Media messages" icon="image" href="/messaging/media-messages">
+    Send and receive media files
+  </Card>
+</CardGroup>

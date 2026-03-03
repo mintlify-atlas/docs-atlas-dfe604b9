@@ -1,0 +1,261 @@
+---
+title: makeWASocket
+description: Factory function to create a new WhatsApp socket connection
+---
+
+## Overview
+
+`makeWASocket` is the main factory function for creating a new WhatsApp Web socket connection. It initializes and returns a `WASocket` instance that provides access to all WhatsApp functionality.
+
+## Function signature
+
+```typescript
+function makeWASocket(config: UserFacingSocketConfig): WASocket
+```
+
+## Parameters
+
+<ParamField path="config" type="UserFacingSocketConfig" required>
+  Configuration object for the socket connection. See [SocketConfig](/api/socket-config) for all available options.
+  
+  <Expandable title="UserFacingSocketConfig definition">
+    ```typescript
+    type UserFacingSocketConfig = Partial<SocketConfig> & { 
+      auth: AuthenticationState 
+    }
+    ```
+    
+    All `SocketConfig` properties are optional except `auth`, which must be provided.
+  </Expandable>
+</ParamField>
+
+### Required configuration
+
+The only required property is `auth`, which manages authentication state:
+
+<ParamField path="config.auth" type="AuthenticationState" required>
+  Authentication state object containing credentials and keys. See [AuthenticationState](/api/auth-state) for details.
+</ParamField>
+
+## Return value
+
+<ResponseField name="WASocket" type="object">
+  Returns a socket instance with methods and properties for interacting with WhatsApp. The socket is a layered object combining functionality from multiple modules:
+  
+  <Expandable title="Core socket properties">
+    <ResponseField name="type" type="'md'">
+      Socket type identifier (multi-device)
+    </ResponseField>
+    
+    <ResponseField name="ws" type="WebSocket">
+      Underlying WebSocket connection
+    </ResponseField>
+    
+    <ResponseField name="ev" type="BaileysEventEmitter">
+      Event emitter for socket events. Subscribe to events like `connection.update`, `messages.upsert`, `chats.update`, etc.
+    </ResponseField>
+    
+    <ResponseField name="authState" type="object">
+      Current authentication state with `creds` and `keys`
+    </ResponseField>
+    
+    <ResponseField name="user" type="Contact | undefined">
+      Information about the authenticated user
+    </ResponseField>
+  </Expandable>
+  
+  <Expandable title="Connection methods">
+    <ResponseField name="logout" type="() => Promise<void>">
+      Logout from the current session
+    </ResponseField>
+    
+    <ResponseField name="end" type="(error?: Error) => void">
+      Close the socket connection
+    </ResponseField>
+    
+    <ResponseField name="waitForConnectionUpdate" type="(check: (u: Partial<ConnectionState>) => boolean, timeoutMs?: number) => Promise<Partial<ConnectionState>>">
+      Wait for a specific connection state update
+    </ResponseField>
+    
+    <ResponseField name="waitForSocketOpen" type="() => Promise<void>">
+      Wait until the WebSocket connection is open
+    </ResponseField>
+  </Expandable>
+  
+  <Expandable title="Messaging methods">
+    <ResponseField name="sendMessage" type="function">
+      Send a message to a chat
+    </ResponseField>
+    
+    <ResponseField name="sendRawMessage" type="function">
+      Send a raw message payload
+    </ResponseField>
+    
+    <ResponseField name="getMessage" type="(key: WAMessageKey) => Promise<proto.IMessage | undefined>">
+      Fetch a message from the store
+    </ResponseField>
+  </Expandable>
+  
+  <Expandable title="Group methods">
+    <ResponseField name="groupMetadata" type="(jid: string) => Promise<GroupMetadata>">
+      Fetch metadata for a group
+    </ResponseField>
+    
+    <ResponseField name="groupCreate" type="function">
+      Create a new group
+    </ResponseField>
+    
+    <ResponseField name="groupParticipantsUpdate" type="function">
+      Add/remove participants from a group
+    </ResponseField>
+  </Expandable>
+  
+  <Expandable title="Community methods">
+    <ResponseField name="communityMetadata" type="(jid: string) => Promise<GroupMetadata>">
+      Fetch metadata for a community
+    </ResponseField>
+    
+    <ResponseField name="communityCreate" type="(subject: string, body: string) => Promise<GroupMetadata>">
+      Create a new community
+    </ResponseField>
+  </Expandable>
+  
+  The socket includes many more methods for handling messages, chats, presence, business features, and more.
+</ResponseField>
+
+## Basic usage
+
+```typescript
+import makeWASocket, { useMultiFileAuthState } from '@whiskeysockets/baileys'
+
+// Load or create authentication state
+const { state, saveCreds } = await useMultiFileAuthState('auth_info')
+
+// Create socket connection
+const sock = makeWASocket({
+  auth: state,
+  printQRInTerminal: true
+})
+
+// Listen for connection updates
+sock.ev.on('connection.update', (update) => {
+  const { connection, lastDisconnect } = update
+  
+  if(connection === 'close') {
+    console.log('Connection closed')
+  } else if(connection === 'open') {
+    console.log('Connection opened')
+  }
+})
+
+// Save credentials when updated
+sock.ev.on('creds.update', saveCreds)
+```
+
+## Usage with custom configuration
+
+```typescript
+import makeWASocket, { 
+  DisconnectReason,
+  useMultiFileAuthState 
+} from '@whiskeysockets/baileys'
+import pino from 'pino'
+
+const { state, saveCreds } = await useMultiFileAuthState('auth_info')
+
+const sock = makeWASocket({
+  auth: state,
+  logger: pino({ level: 'info' }),
+  printQRInTerminal: true,
+  // Browser metadata
+  browser: ['MyApp', 'Chrome', '1.0.0'],
+  // Custom timeouts
+  connectTimeoutMs: 60000,
+  defaultQueryTimeoutMs: 60000,
+  // Mark as online when connected
+  markOnlineOnConnect: true,
+  // Sync full chat history
+  syncFullHistory: false,
+  // Message handling
+  getMessage: async (key) => {
+    // Retrieve message from your database
+    return await getMessageFromDB(key)
+  }
+})
+
+sock.ev.on('creds.update', saveCreds)
+
+sock.ev.on('connection.update', (update) => {
+  const { connection, lastDisconnect } = update
+  
+  if(connection === 'close') {
+    const shouldReconnect = 
+      lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
+    
+    if(shouldReconnect) {
+      // Reconnect if not logged out
+      makeWASocket(config)
+    }
+  }
+})
+
+// Listen for new messages
+sock.ev.on('messages.upsert', async ({ messages }) => {
+  for(const msg of messages) {
+    console.log('Received message:', msg)
+  }
+})
+```
+
+## Event handling
+
+The socket's `ev` property is an event emitter that fires various events:
+
+<CodeGroup>
+```typescript Connection Events
+sock.ev.on('connection.update', (update) => {
+  console.log('Connection status:', update.connection)
+})
+```
+
+```typescript Message Events
+sock.ev.on('messages.upsert', ({ messages, type }) => {
+  console.log('New messages:', messages)
+  console.log('Type:', type) // 'notify' | 'append'
+})
+
+sock.ev.on('messages.update', (updates) => {
+  console.log('Message updates:', updates)
+})
+```
+
+```typescript Chat Events
+sock.ev.on('chats.upsert', (chats) => {
+  console.log('New chats:', chats)
+})
+
+sock.ev.on('chats.update', (updates) => {
+  console.log('Chat updates:', updates)
+})
+```
+
+```typescript Group Events
+sock.ev.on('groups.update', (groups) => {
+  console.log('Group updates:', groups)
+})
+
+sock.ev.on('group-participants.update', (update) => {
+  console.log('Participant update:', update)
+})
+```
+</CodeGroup>
+
+<Note>
+  The socket merges defaults from `DEFAULT_CONNECTION_CONFIG` with your provided configuration. Only the `auth` property is required; all other settings have sensible defaults.
+</Note>
+
+## See also
+
+- [SocketConfig](/api/socket-config) - Complete configuration reference
+- [AuthenticationState](/api/auth-state) - Authentication state management
+- [Events](/core/events) - Complete event reference

@@ -1,0 +1,301 @@
+---
+title: Authentication
+description: Learn how to authenticate your Baileys client using QR code or pairing code methods
+---
+
+Baileys provides two methods to authenticate your WhatsApp Web client: scanning a QR code or using a pairing code. Both methods connect your bot as a secondary device to an existing WhatsApp account.
+
+## Authentication methods
+
+WhatsApp's multi-device API allows Baileys to authenticate as a second WhatsApp client by either:
+
+- **QR code**: Scan a code displayed in your terminal with WhatsApp on your phone
+- **Pairing code**: Enter a code in WhatsApp mobile settings to link without scanning
+
+<Note>
+Pairing code is not the Mobile API. It's simply an alternative method to connect WhatsApp Web without QR code scanning.
+</Note>
+
+## QR code authentication
+
+The QR code method displays a scannable code in your terminal that you scan with WhatsApp on your phone.
+
+### Basic QR code setup
+
+```typescript
+import makeWASocket from '@whiskeysockets/baileys'
+
+const sock = makeWASocket({
+    printQRInTerminal: true
+})
+```
+
+### Customizing browser appearance
+
+You can customize how your client appears in WhatsApp's "Linked Devices" list:
+
+```typescript
+import makeWASocket, { Browsers } from '@whiskeysockets/baileys'
+
+const sock = makeWASocket({
+    browser: Browsers.ubuntu('My App'),
+    printQRInTerminal: true
+})
+```
+
+<Tabs>
+  <Tab title="Ubuntu">
+    ```typescript
+    browser: Browsers.ubuntu('My App')
+    ```
+  </Tab>
+  <Tab title="macOS">
+    ```typescript
+    browser: Browsers.macOS('My App')
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```typescript
+    browser: Browsers.windows('My App')
+    ```
+  </Tab>
+  <Tab title="Custom">
+    ```typescript
+    browser: ['My App', 'Chrome', '1.0.0']
+    ```
+  </Tab>
+</Tabs>
+
+## Pairing code authentication
+
+The pairing code method lets users link their device by entering a code in WhatsApp settings, avoiding the need to scan a QR code.
+
+### Basic pairing code setup
+
+<Steps>
+  <Step title="Disable QR terminal printing">
+    Set `printQRInTerminal` to `false` when creating the socket:
+    
+    ```typescript
+    const sock = makeWASocket({
+        printQRInTerminal: false
+    })
+    ```
+  </Step>
+  
+  <Step title="Check registration status">
+    Check if credentials are already registered before requesting a pairing code:
+    
+    ```typescript
+    if (!sock.authState.creds.registered) {
+        // Request pairing code
+    }
+    ```
+  </Step>
+  
+  <Step title="Request pairing code">
+    Request a pairing code using the phone number (country code + number, no special characters):
+    
+    ```typescript
+    const phoneNumber = '1234567890' // No +, (), or -
+    const code = await sock.requestPairingCode(phoneNumber)
+    console.log(`Pairing code: ${code}`)
+    ```
+  </Step>
+  
+  <Step title="Enter code in WhatsApp">
+    The user enters this code in WhatsApp > Settings > Linked Devices > Link a Device > Link with Phone Number
+  </Step>
+</Steps>
+
+### Complete pairing code example
+
+```typescript
+import makeWASocket from '@whiskeysockets/baileys'
+
+async function connectWithPairing() {
+    const sock = makeWASocket({
+        printQRInTerminal: false
+    })
+    
+    if (!sock.authState.creds.registered) {
+        const phoneNumber = '1234567890'
+        const code = await sock.requestPairingCode(phoneNumber)
+        console.log(`Your pairing code: ${code}`)
+    }
+}
+```
+
+<Warning>
+The phone number must include only digits with the country code. Do not include `+`, `()`, `-` or spaces.
+</Warning>
+
+## Saving and restoring sessions
+
+To avoid re-authenticating every time, save the authentication state to disk using `useMultiFileAuthState`.
+
+### Using multi-file auth state
+
+```typescript
+import makeWASocket, { useMultiFileAuthState } from '@whiskeysockets/baileys'
+
+const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+
+const sock = makeWASocket({ 
+    auth: state,
+    printQRInTerminal: true 
+})
+
+// Save credentials whenever they update
+sock.ev.on('creds.update', saveCreds)
+```
+
+<Info>
+The `useMultiFileAuthState` function stores authentication data in a folder. For production applications, implement a custom auth state handler using a database instead.
+</Info>
+
+### How auth state works
+
+The authentication state contains two components:
+
+- **`state.creds`**: Authentication credentials including identity keys and registration info
+- **`state.keys`**: Signal protocol keys for message encryption/decryption
+
+<CodeGroup>
+```typescript AuthenticationState
+export type AuthenticationState = {
+    creds: AuthenticationCreds
+    keys: SignalKeyStore
+}
+```
+
+```typescript SignalKeyStore
+export type SignalKeyStore = {
+    get<T>(type: T, ids: string[]): Promise<{ [id: string]: SignalDataTypeMap[T] }>
+    set(data: SignalDataSet): Promise<void>
+    clear?(): Promise<void>
+}
+```
+</CodeGroup>
+
+### Key state management
+
+<Warning>
+Whenever a message is sent or received, the auth keys (`state.keys`) will update due to Signal protocol session management. You **must** save these updates by implementing `creds.update` event handler. Failing to do so will prevent messages from being delivered and cause decryption failures.
+</Warning>
+
+```typescript
+sock.ev.on('creds.update', saveCreds)
+```
+
+The `useMultiFileAuthState` function handles this automatically, but custom implementations must be careful with key state management.
+
+## Receiving full history
+
+By default, Baileys receives limited message history. To receive more:
+
+<Steps>
+  <Step title="Enable full history sync">
+    Set `syncFullHistory` to `true` in socket config:
+    
+    ```typescript
+    const sock = makeWASocket({
+        syncFullHistory: true
+    })
+    ```
+  </Step>
+  
+  <Step title="Use desktop browser config">
+    Desktop connections receive more history than mobile:
+    
+    ```typescript
+    const sock = makeWASocket({
+        browser: Browsers.macOS('Desktop'),
+        syncFullHistory: true
+    })
+    ```
+  </Step>
+</Steps>
+
+## Authentication with custom configuration
+
+Here's a complete example combining authentication with common configurations:
+
+```typescript
+import makeWASocket, { 
+    useMultiFileAuthState, 
+    Browsers,
+    DisconnectReason 
+} from '@whiskeysockets/baileys'
+import { Boom } from '@hapi/boom'
+
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+    
+    const sock = makeWASocket({
+        auth: state,
+        browser: Browsers.ubuntu('My WhatsApp Bot'),
+        printQRInTerminal: true,
+        syncFullHistory: true
+    })
+    
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update
+        
+        if (connection === 'close') {
+            const shouldReconnect = 
+                (lastDisconnect?.error as Boom)?.output?.statusCode !== 
+                DisconnectReason.loggedOut
+            
+            if (shouldReconnect) {
+                connectToWhatsApp()
+            }
+        } else if (connection === 'open') {
+            console.log('Connected successfully')
+        }
+    })
+    
+    sock.ev.on('creds.update', saveCreds)
+}
+
+connectToWhatsApp()
+```
+
+## Custom auth state implementation
+
+For production systems, implement a custom auth state using a database:
+
+```typescript
+import { AuthenticationState, SignalDataTypeMap } from '@whiskeysockets/baileys'
+
+function createDatabaseAuthState(): AuthenticationState {
+    return {
+        creds: await loadCredsFromDatabase(),
+        keys: {
+            get: async (type, ids) => {
+                // Load keys from database
+                return await db.getKeys(type, ids)
+            },
+            set: async (data) => {
+                // Save keys to database
+                await db.saveKeys(data)
+            }
+        }
+    }
+}
+```
+
+<Info>
+The `useMultiFileAuthState` implementation in `src/Utils/use-multi-file-auth-state.ts` serves as an excellent reference for building custom auth state handlers.
+</Info>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Connection management" icon="link" href="/core/connection">
+    Learn about connection lifecycle and reconnection strategies
+  </Card>
+  <Card title="Event handling" icon="bolt" href="/core/events">
+    Handle messages, connection updates, and other events
+  </Card>
+</CardGroup>

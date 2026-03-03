@@ -1,0 +1,168 @@
+---
+title: Group overview
+description: Understanding WhatsApp group concepts, JIDs, metadata, and caching
+---
+
+Groups in WhatsApp are multi-participant conversations that support features like admin roles, group settings, and ephemeral messages. Baileys provides comprehensive group management capabilities through its API.
+
+## Group JIDs
+
+Groups use a special JID (Jabber ID) format to identify them in the WhatsApp network:
+
+- Group JIDs end with `@g.us` (e.g., `120363123456789@g.us`)
+- Individual user JIDs end with `@s.whatsapp.net`
+- When creating groups or performing operations, Baileys automatically handles JID encoding
+
+```ts
+// Group JID example
+const groupJid = '120363123456789@g.us'
+
+// The library handles encoding automatically
+const metadata = await sock.groupMetadata(groupJid)
+```
+
+## Group metadata
+
+Group metadata contains comprehensive information about a group, including participants, settings, and descriptions.
+
+### Fetching metadata
+
+```ts
+const metadata = await sock.groupMetadata(jid)
+console.log(metadata.id + ', title: ' + metadata.subject + ', description: ' + metadata.desc)
+```
+
+### Metadata structure
+
+The `GroupMetadata` object includes:
+
+<ParamField path="id" type="string">
+  Group JID identifier
+</ParamField>
+
+<ParamField path="subject" type="string">
+  Group name/title
+</ParamField>
+
+<ParamField path="subjectOwner" type="string">
+  JID of the user who last changed the group name
+</ParamField>
+
+<ParamField path="subjectTime" type="number">
+  Timestamp when the group name was last changed
+</ParamField>
+
+<ParamField path="desc" type="string">
+  Group description text
+</ParamField>
+
+<ParamField path="descOwner" type="string">
+  JID of the user who set the description
+</ParamField>
+
+<ParamField path="descId" type="string">
+  Description ID used for updates
+</ParamField>
+
+<ParamField path="descTime" type="number">
+  Timestamp when the description was last changed
+</ParamField>
+
+<ParamField path="creation" type="number">
+  Group creation timestamp
+</ParamField>
+
+<ParamField path="owner" type="string">
+  JID of the group creator
+</ParamField>
+
+<ParamField path="size" type="number">
+  Number of participants in the group
+</ParamField>
+
+<ParamField path="participants" type="GroupParticipant[]">
+  Array of participant objects with `id`, `admin` role, and optional `phoneNumber`/`lid`
+</ParamField>
+
+<ParamField path="announce" type="boolean">
+  Whether the group is announcement-only (only admins can send messages)
+</ParamField>
+
+<ParamField path="restrict" type="boolean">
+  Whether group settings are restricted to admins only
+</ParamField>
+
+<ParamField path="ephemeralDuration" type="number">
+  Ephemeral message duration in seconds (if enabled)
+</ParamField>
+
+<ParamField path="memberAddMode" type="boolean">
+  Whether all members can add participants (true) or only admins (false)
+</ParamField>
+
+<ParamField path="joinApprovalMode" type="boolean">
+  Whether join requests require admin approval
+</ParamField>
+
+<ParamField path="isCommunity" type="boolean">
+  Whether the group is part of a community
+</ParamField>
+
+<ParamField path="linkedParent" type="string">
+  JID of the parent community (if applicable)
+</ParamField>
+
+## Fetching all participating groups
+
+You can retrieve metadata for all groups you're participating in with a single call:
+
+```ts
+const response = await sock.groupFetchAllParticipating()
+console.log(response)
+// Returns: { [groupJid: string]: GroupMetadata }
+```
+
+This returns an object mapping group JIDs to their metadata. This is useful for:
+- Building a group list UI
+- Syncing group information on startup
+- Caching group data locally
+
+<Note>
+  The `groupFetchAllParticipating` function automatically emits a `groups.update` event, which you can listen to for keeping your local cache in sync.
+</Note>
+
+## Caching and dirty bits
+
+Bailey's uses a "dirty bits" system to track when group data needs refreshing:
+
+- When groups are modified, WhatsApp sends a dirty bit notification
+- Baileys automatically listens for these notifications on the `CB:ib,,dirty` event
+- When groups are marked dirty, `groupFetchAllParticipating` is called automatically
+- After syncing, dirty bits are cleaned with `cleanDirtyBits('groups')`
+
+This ensures your group metadata stays synchronized without constant polling.
+
+<Accordion title="Understanding dirty bits">
+  Dirty bits are WhatsApp's way of signaling that cached data is stale. When you receive a dirty bit notification for groups, it means one or more groups you're in have been modified (name changed, participant added/removed, settings updated, etc.). Baileys handles this automatically, but you can also manually trigger a refresh by calling `groupFetchAllParticipating()`.
+</Accordion>
+
+## Participant roles
+
+Group participants can have different admin roles:
+
+- `null` - Regular member
+- `'admin'` - Group admin
+- `'superadmin'` - Group creator/owner (has all admin privileges)
+
+```ts
+const metadata = await sock.groupMetadata(jid)
+metadata.participants.forEach(participant => {
+  if (participant.admin) {
+    console.log(`${participant.id} is a ${participant.admin}`)
+  }
+})
+```
+
+<Warning>
+  Most group management operations (changing settings, adding/removing participants, etc.) require admin privileges. Attempts to perform these actions as a regular member will fail.
+</Warning>

@@ -1,0 +1,183 @@
+---
+title: Installation
+description: Install Baileys using npm, yarn, or pnpm
+---
+
+# Installation
+
+Baileys is available as an npm package and can be installed using your preferred package manager.
+
+## Requirements
+
+Before installing Baileys, ensure you have:
+
+- **Node.js 20.0.0 or higher** - Required for running Baileys
+- A package manager (npm, yarn, or pnpm)
+
+## Install the stable version
+
+The stable version is recommended for production use:
+
+<CodeGroup>
+
+```bash npm
+npm install @whiskeysockets/baileys
+```
+
+```bash yarn
+yarn add @whiskeysockets/baileys
+```
+
+```bash pnpm
+pnpm add @whiskeysockets/baileys
+```
+
+</CodeGroup>
+
+## Install the edge version
+
+The edge version includes the latest features and fixes, but may be less stable:
+
+<CodeGroup>
+
+```bash npm
+npm install github:WhiskeySockets/Baileys
+```
+
+```bash yarn
+yarn add github:WhiskeySockets/Baileys
+```
+
+```bash pnpm
+pnpm add github:WhiskeySockets/Baileys
+```
+
+</CodeGroup>
+
+<Warning>
+  The edge version is built directly from the GitHub repository and may contain breaking changes or bugs. Use it only if you need the absolute latest features or fixes.
+</Warning>
+
+## Import in your project
+
+Once installed, import Baileys in your TypeScript or JavaScript files:
+
+```typescript
+import makeWASocket from '@whiskeysockets/baileys'
+```
+
+For CommonJS projects:
+
+```javascript
+const { default: makeWASocket } = require('@whiskeysockets/baileys')
+```
+
+## Optional dependencies
+
+Baileys has several optional peer dependencies that enable additional functionality:
+
+### Link preview generation
+
+To enable automatic link preview generation in messages:
+
+<CodeGroup>
+
+```bash npm
+npm install link-preview-js
+```
+
+```bash yarn
+yarn add link-preview-js
+```
+
+```bash pnpm
+pnpm add link-preview-js
+```
+
+</CodeGroup>
+
+### Media thumbnail generation
+
+For automatic thumbnail generation in image and sticker messages:
+
+<CodeGroup>
+
+```bash npm
+npm install jimp
+# or
+npm install sharp
+```
+
+```bash yarn
+yarn add jimp
+# or
+yarn add sharp
+```
+
+```bash pnpm
+pnpm add jimp
+# or
+pnpm add sharp
+```
+
+</CodeGroup>
+
+<Tip>
+  For video thumbnail generation, you'll also need `ffmpeg` installed on your system. Install it using your system's package manager (e.g., `apt install ffmpeg` on Ubuntu).
+</Tip>
+
+### Audio decoding
+
+For advanced audio processing:
+
+<CodeGroup>
+
+```bash npm
+npm install audio-decode
+```
+
+```bash yarn
+yarn add audio-decode
+```
+
+```bash pnpm
+pnpm add audio-decode
+```
+
+</CodeGroup>
+
+## Verify installation
+
+To verify that Baileys is installed correctly, create a simple test file:
+
+```typescript test.ts
+import makeWASocket from '@whiskeysockets/baileys'
+
+const sock = makeWASocket({
+  printQRInTerminal: true
+})
+
+console.log('Baileys loaded successfully!')
+```
+
+Run it with:
+
+```bash
+node test.ts
+# or with tsx for TypeScript
+npx tsx test.ts
+```
+
+If you see the success message, Baileys is installed correctly!
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart guide" icon="rocket" href="/quickstart">
+    Build your first WhatsApp bot with Baileys
+  </Card>
+  
+  <Card title="API documentation" icon="book" href="https://baileys.whiskeysockets.io/" target="_blank">
+    Explore all available methods and types
+  </Card>
+</CardGroup>

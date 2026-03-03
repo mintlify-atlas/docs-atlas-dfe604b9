@@ -1,0 +1,423 @@
+---
+title: Connection
+description: Understand the connection lifecycle, states, and reconnection strategies in Baileys
+---
+
+Baileys manages a WebSocket connection to WhatsApp's servers. Understanding the connection lifecycle is crucial for building reliable bots.
+
+## Connection states
+
+The connection can be in one of three states:
+
+<CodeGroup>
+```typescript Connection states
+type WAConnectionState = 'open' | 'connecting' | 'close'
+```
+
+```typescript ConnectionState
+export type ConnectionState = {
+    /** connection is now open, connecting or closed */
+    connection: WAConnectionState
+    
+    /** the error that caused the connection to close */
+    lastDisconnect?: {
+        error: Boom | Error | undefined
+        date: Date
+    }
+    
+    /** is this a new login */
+    isNewLogin?: boolean
+    
+    /** the current QR code */
+    qr?: string
+    
+    /** has the device received all pending notifications */
+    receivedPendingNotifications?: boolean
+    
+    /** if the client is shown as an active, online client */
+    isOnline?: boolean
+}
+```
+</CodeGroup>
+
+### Connection lifecycle
+
+<Steps>
+  <Step title="Connecting">
+    Socket is attempting to establish a WebSocket connection to WhatsApp servers.
+  </Step>
+  
+  <Step title="Open">
+    Connection is established and authenticated. The client can send and receive messages.
+  </Step>
+  
+  <Step title="Close">
+    Connection has been terminated. Check `lastDisconnect` to determine if reconnection is needed.
+  </Step>
+</Steps>
+
+## Monitoring connection updates
+
+Listen to the `connection.update` event to monitor connection state changes:
+
+```typescript
+import makeWASocket from '@whiskeysockets/baileys'
+
+const sock = makeWASocket({ /* config */ })
+
+sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect, qr } = update
+    
+    console.log('Connection status:', connection)
+    
+    if (qr) {
+        console.log('QR Code:', qr)
+    }
+})
+```
+
+### Connection update properties
+
+<ResponseField name="connection" type="'open' | 'connecting' | 'close'">
+  Current connection state
+</ResponseField>
+
+<ResponseField name="lastDisconnect" type="object">
+  Information about the last disconnection, including the error and timestamp
+</ResponseField>
+
+<ResponseField name="qr" type="string">
+  QR code string to display for authentication (only present during initial authentication)
+</ResponseField>
+
+<ResponseField name="isNewLogin" type="boolean">
+  Whether this is a new login session
+</ResponseField>
+
+<ResponseField name="receivedPendingNotifications" type="boolean">
+  Whether all pending notifications have been received
+</ResponseField>
+
+## Disconnect reasons
+
+When the connection closes, check the `DisconnectReason` to determine the appropriate action:
+
+```typescript DisconnectReason enum
+export enum DisconnectReason {
+    connectionClosed = 428,
+    connectionLost = 408,
+    connectionReplaced = 440,
+    timedOut = 408,
+    loggedOut = 401,
+    badSession = 500,
+    restartRequired = 515,
+    multideviceMismatch = 411,
+    forbidden = 403,
+    unavailableService = 503
+}
+```
+
+### Common disconnect reasons
+
+<Tabs>
+  <Tab title="loggedOut (401)">
+    The session was logged out from another device. **Do not reconnect automatically**.
+    
+    ```typescript
+    if (statusCode === DisconnectReason.loggedOut) {
+        console.log('Logged out, please re-authenticate')
+        // Do not reconnect
+    }
+    ```
+  </Tab>
+  
+  <Tab title="connectionLost (408)">
+    Network connection was lost. **Safe to reconnect**.
+    
+    ```typescript
+    if (statusCode === DisconnectReason.connectionLost) {
+        console.log('Connection lost, reconnecting...')
+        connectToWhatsApp()
+    }
+    ```
+  </Tab>
+  
+  <Tab title="connectionReplaced (440)">
+    Another instance connected with the same credentials. **Safe to reconnect** if this instance should take over.
+    
+    ```typescript
+    if (statusCode === DisconnectReason.connectionReplaced) {
+        console.log('Connection replaced by another instance')
+        // Reconnect to reclaim the session
+    }
+    ```
+  </Tab>
+  
+  <Tab title="restartRequired (515)">
+    WhatsApp servers require a restart. **Reconnect immediately**.
+    
+    ```typescript
+    if (statusCode === DisconnectReason.restartRequired) {
+        console.log('Restart required by WhatsApp')
+        connectToWhatsApp()
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Implementing reconnection logic
+
+A robust reconnection strategy prevents unnecessary re-authentication:
+
+```typescript
+import makeWASocket, { 
+    DisconnectReason, 
+    useMultiFileAuthState 
+} from '@whiskeysockets/baileys'
+import { Boom } from '@hapi/boom'
+
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+    
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true
+    })
+    
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update
+        
+        if (connection === 'close') {
+            const shouldReconnect = 
+                (lastDisconnect?.error as Boom)?.output?.statusCode !== 
+                DisconnectReason.loggedOut
+            
+            console.log(
+                'Connection closed due to',
+                lastDisconnect?.error,
+                'reconnecting:',
+                shouldReconnect
+            )
+            
+            if (shouldReconnect) {
+                connectToWhatsApp()
+            }
+        } else if (connection === 'open') {
+            console.log('Connection opened successfully')
+        }
+    })
+    
+    sock.ev.on('creds.update', saveCreds)
+}
+
+connectToWhatsApp()
+```
+
+<Warning>
+Always check if the disconnect reason is `loggedOut` before reconnecting. Reconnecting after a logout will fail and may trigger rate limiting.
+</Warning>
+
+## Advanced reconnection strategies
+
+### Exponential backoff
+
+Implement exponential backoff to avoid hammering WhatsApp servers:
+
+```typescript
+let reconnectAttempts = 0
+const MAX_RECONNECT_ATTEMPTS = 5
+const BASE_DELAY = 1000
+
+async function connectWithBackoff() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+    
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true
+    })
+    
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect } = update
+        
+        if (connection === 'close') {
+            const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut
+            
+            if (shouldReconnect && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts++
+                const delay = BASE_DELAY * Math.pow(2, reconnectAttempts - 1)
+                
+                console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts})...`)
+                await new Promise(resolve => setTimeout(resolve, delay))
+                connectWithBackoff()
+            } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                console.log('Max reconnection attempts reached')
+            }
+        } else if (connection === 'open') {
+            reconnectAttempts = 0 // Reset on successful connection
+            console.log('Connected successfully')
+        }
+    })
+    
+    sock.ev.on('creds.update', saveCreds)
+}
+```
+
+### Reconnection with error handling
+
+```typescript
+async function connectToWhatsApp() {
+    try {
+        const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+        
+        const sock = makeWASocket({
+            auth: state,
+            printQRInTerminal: true,
+            connectTimeoutMs: 60000
+        })
+        
+        sock.ev.on('connection.update', (update) => {
+            const { connection, lastDisconnect } = update
+            
+            if (connection === 'close') {
+                const error = lastDisconnect?.error as Boom
+                const statusCode = error?.output?.statusCode
+                
+                switch (statusCode) {
+                    case DisconnectReason.loggedOut:
+                        console.log('Device logged out, please re-authenticate')
+                        break
+                    
+                    case DisconnectReason.badSession:
+                        console.log('Bad session, deleting auth state...')
+                        // Delete auth files and restart
+                        break
+                    
+                    case DisconnectReason.connectionReplaced:
+                        console.log('Connection replaced, reconnecting...')
+                        connectToWhatsApp()
+                        break
+                    
+                    default:
+                        console.log('Connection closed, reconnecting...')
+                        connectToWhatsApp()
+                }
+            } else if (connection === 'open') {
+                console.log('Connection established')
+            }
+        })
+        
+        sock.ev.on('creds.update', saveCreds)
+        
+        return sock
+    } catch (error) {
+        console.error('Error creating socket:', error)
+        throw error
+    }
+}
+```
+
+## Connection configuration
+
+### Timeout settings
+
+Configure various timeout settings for connection management:
+
+```typescript
+const sock = makeWASocket({
+    connectTimeoutMs: 60000,           // Connection timeout (default: 20000)
+    defaultQueryTimeoutMs: 60000,      // Query timeout (default: 60000)
+    keepAliveIntervalMs: 25000,        // Ping interval (default: 25000)
+    qrTimeout: 40000                   // QR code timeout (default: undefined)
+})
+```
+
+<ResponseField name="connectTimeoutMs" type="number" default="20000">
+  Maximum time to wait for initial connection
+</ResponseField>
+
+<ResponseField name="defaultQueryTimeoutMs" type="number" default="60000">
+  Default timeout for queries to WhatsApp
+</ResponseField>
+
+<ResponseField name="keepAliveIntervalMs" type="number" default="25000">
+  Interval for WebSocket ping-pong to keep connection alive
+</ResponseField>
+
+<ResponseField name="qrTimeout" type="number">
+  Time to wait for QR code generation before timeout
+</ResponseField>
+
+### Online presence
+
+Control whether your client appears online:
+
+```typescript
+const sock = makeWASocket({
+    markOnlineOnConnect: false  // Don't mark as online automatically
+})
+```
+
+<Info>
+If you want to receive notifications on your primary WhatsApp device, set `markOnlineOnConnect` to `false`. WhatsApp doesn't send push notifications to the primary device when a desktop client is marked as online.
+</Info>
+
+## Connection health monitoring
+
+Monitor connection health by tracking state changes:
+
+```typescript
+let connectionState = {
+    isConnected: false,
+    lastConnected: null as Date | null,
+    lastDisconnected: null as Date | null,
+    disconnectCount: 0
+}
+
+sock.ev.on('connection.update', (update) => {
+    const { connection } = update
+    
+    if (connection === 'open') {
+        connectionState.isConnected = true
+        connectionState.lastConnected = new Date()
+        console.log('Connection established at', connectionState.lastConnected)
+    } else if (connection === 'close') {
+        connectionState.isConnected = false
+        connectionState.lastDisconnected = new Date()
+        connectionState.disconnectCount++
+        
+        console.log('Disconnected at', connectionState.lastDisconnected)
+        console.log('Total disconnects:', connectionState.disconnectCount)
+    }
+})
+```
+
+## Graceful shutdown
+
+Properly close the connection when shutting down:
+
+```typescript
+process.on('SIGINT', async () => {
+    console.log('Shutting down gracefully...')
+    
+    // Close the socket
+    await sock.logout()
+    
+    process.exit(0)
+})
+```
+
+<Warning>
+Use `sock.logout()` to properly close the session. This prevents the connection from being marked as "Connection Replaced" when restarting.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Event system" icon="bolt" href="/core/events">
+    Learn about handling events and messages
+  </Card>
+  <Card title="Data store" icon="database" href="/core/data-store">
+    Implement data storage for messages and contacts
+  </Card>
+</CardGroup>

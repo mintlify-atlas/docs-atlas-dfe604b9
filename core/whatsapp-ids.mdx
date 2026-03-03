@@ -1,0 +1,470 @@
+---
+title: WhatsApp IDs
+description: Understand JID format and usage for users, groups, broadcasts, and stories in Baileys
+---
+
+WhatsApp uses a specific ID format called JID (Jabber ID) to identify users, groups, broadcast lists, and other entities. Understanding JID formats is essential for working with Baileys.
+
+## JID format overview
+
+A JID consists of two parts separated by `@`:
+
+```
+[identifier]@[server]
+```
+
+- **identifier**: The unique identifier (phone number, group ID, etc.)
+- **server**: The WhatsApp server domain
+
+## User JIDs
+
+Regular WhatsApp users are identified by their phone number:
+
+```typescript
+const userJid = '1234567890@s.whatsapp.net'
+```
+
+### Format breakdown
+
+<ResponseField name="Format" type="string">
+  `[country_code][phone_number]@s.whatsapp.net`
+</ResponseField>
+
+<ResponseField name="Example" type="string">
+  `19999999999@s.whatsapp.net` for a US number +1 (999) 999-9999
+</ResponseField>
+
+### Creating user JIDs
+
+```typescript
+function createUserJid(phoneNumber: string): string {
+    // Remove all non-numeric characters
+    const cleaned = phoneNumber.replace(/[^0-9]/g, '')
+    
+    // Add WhatsApp server domain
+    return `${cleaned}@s.whatsapp.net`
+}
+
+// Examples
+const jid1 = createUserJid('+1 (234) 567-8900')  // '12345678900@s.whatsapp.net'
+const jid2 = createUserJid('1234567890')         // '1234567890@s.whatsapp.net'
+```
+
+<Warning>
+Phone numbers in JIDs must include the country code without the `+` symbol. Do not include spaces, parentheses, or hyphens.
+</Warning>
+
+### Validating phone numbers
+
+Check if a phone number exists on WhatsApp:
+
+```typescript
+const [result] = await sock.onWhatsApp('1234567890@s.whatsapp.net')
+
+if (result?.exists) {
+    console.log(`Number exists as: ${result.jid}`)
+} else {
+    console.log('Number does not exist on WhatsApp')
+}
+```
+
+## Group JIDs
+
+Groups have a different JID format:
+
+```typescript
+const groupJid = '123456789-1234567890@g.us'
+```
+
+### Format breakdown
+
+<ResponseField name="Format" type="string">
+  `[group_id]-[creator_timestamp]@g.us`
+</ResponseField>
+
+<ResponseField name="Example" type="string">
+  `123456789-1234567890@g.us`
+</ResponseField>
+
+### Working with groups
+
+```typescript
+// Create a group
+const group = await sock.groupCreate('My Group', [
+    '1234567890@s.whatsapp.net',
+    '9876543210@s.whatsapp.net'
+])
+
+console.log('Group JID:', group.id)
+// Output: 123456789-1234567890@g.us
+
+// Send message to group
+await sock.sendMessage(group.id, { text: 'Hello group!' })
+
+// Get group metadata
+const metadata = await sock.groupMetadata(group.id)
+console.log('Group name:', metadata.subject)
+console.log('Participants:', metadata.participants.length)
+```
+
+## Broadcast JIDs
+
+Broadcast lists use timestamp-based identifiers:
+
+```typescript
+const broadcastJid = '1234567890@broadcast'
+```
+
+### Format breakdown
+
+<ResponseField name="Format" type="string">
+  `[timestamp_of_creation]@broadcast`
+</ResponseField>
+
+<ResponseField name="Example" type="string">
+  `1234567890@broadcast`
+</ResponseField>
+
+### Working with broadcasts
+
+```typescript
+// Get broadcast list info
+const broadcastInfo = await sock.getBroadcastListInfo('1234567890@broadcast')
+
+console.log('List name:', broadcastInfo.name)
+console.log('Recipients:', broadcastInfo.recipients)
+
+// Send to broadcast list
+await sock.sendMessage(
+    '1234567890@broadcast',
+    { text: 'Broadcast message' }
+)
+```
+
+<Info>
+WhatsApp Web does not support creating new broadcast lists, but you can send messages to existing lists and delete them.
+</Info>
+
+## Story/Status JID
+
+WhatsApp stories (status updates) use a special JID:
+
+```typescript
+const statusJid = 'status@broadcast'
+```
+
+### Posting to status
+
+```typescript
+await sock.sendMessage(
+    'status@broadcast',
+    {
+        image: { url: './image.jpg' },
+        caption: 'My status update'
+    },
+    {
+        backgroundColor: '#00FF00',
+        statusJidList: [
+            '1234567890@s.whatsapp.net',
+            '9876543210@s.whatsapp.net'
+        ],
+        broadcast: true
+    }
+)
+```
+
+<Tabs>
+  <Tab title="Image status">
+    ```typescript
+    await sock.sendMessage(
+        'status@broadcast',
+        { image: { url: './photo.jpg' } },
+        { statusJidList: contacts, broadcast: true }
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Video status">
+    ```typescript
+    await sock.sendMessage(
+        'status@broadcast',
+        { video: { url: './video.mp4' } },
+        { statusJidList: contacts, broadcast: true }
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Text status">
+    ```typescript
+    await sock.sendMessage(
+        'status@broadcast',
+        { text: 'My text status' },
+        { 
+            statusJidList: contacts,
+            broadcast: true,
+            backgroundColor: '#FF5733',
+            font: 2
+        }
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Newsletter JIDs
+
+WhatsApp newsletters (channels) have their own JID format:
+
+```typescript
+const newsletterJid = '123456789@newsletter'
+```
+
+### Checking for newsletters
+
+```typescript
+import { isJidNewsletter } from '@whiskeysockets/baileys'
+
+if (isJidNewsletter(jid)) {
+    console.log('This is a newsletter')
+    // Handle newsletter differently
+}
+```
+
+## JID utility functions
+
+Baileys provides utility functions for working with JIDs:
+
+### Checking JID types
+
+```typescript
+import { 
+    isJidUser,
+    isJidGroup,
+    isJidBroadcast,
+    isJidStatusBroadcast,
+    isJidNewsletter,
+    jidNormalizedUser
+} from '@whiskeysockets/baileys'
+
+// Check JID type
+if (isJidUser(jid)) {
+    console.log('This is a user JID')
+}
+
+if (isJidGroup(jid)) {
+    console.log('This is a group JID')
+}
+
+if (isJidBroadcast(jid)) {
+    console.log('This is a broadcast JID')
+}
+
+if (isJidStatusBroadcast(jid)) {
+    console.log('This is a status broadcast')
+}
+
+if (isJidNewsletter(jid)) {
+    console.log('This is a newsletter')
+}
+
+// Normalize user JID
+const normalized = jidNormalizedUser('1234567890@s.whatsapp.net')
+```
+
+### Extracting JID components
+
+```typescript
+function parseJid(jid: string) {
+    const [identifier, server] = jid.split('@')
+    return { identifier, server }
+}
+
+const { identifier, server } = parseJid('1234567890@s.whatsapp.net')
+console.log('Phone number:', identifier)  // '1234567890'
+console.log('Server:', server)             // 's.whatsapp.net'
+```
+
+## Message keys and JIDs
+
+Message keys contain JID information:
+
+```typescript
+type WAMessageKey = {
+    remoteJid?: string      // Chat where message was sent
+    fromMe?: boolean        // Whether message is from you
+    id?: string             // Message ID
+    participant?: string    // Sender JID (in group chats)
+}
+```
+
+### Understanding message JIDs
+
+<Tabs>
+  <Tab title="Private chat">
+    ```typescript
+    {
+        remoteJid: '1234567890@s.whatsapp.net',
+        fromMe: true,
+        id: 'ABCD1234'
+    }
+    ```
+    
+    In private chats, `remoteJid` is the other user's JID.
+  </Tab>
+  
+  <Tab title="Group chat">
+    ```typescript
+    {
+        remoteJid: '123456789-1234567890@g.us',
+        fromMe: false,
+        id: 'ABCD1234',
+        participant: '1234567890@s.whatsapp.net'
+    }
+    ```
+    
+    In group chats, `remoteJid` is the group JID and `participant` is the sender's JID.
+  </Tab>
+</Tabs>
+
+### Determining message sender
+
+```typescript
+function getMessageSender(msg: WAMessage): string {
+    if (msg.key.fromMe) {
+        return 'me'
+    }
+    
+    // In groups, participant contains the sender
+    if (msg.key.participant) {
+        return msg.key.participant
+    }
+    
+    // In private chats, remoteJid is the sender
+    return msg.key.remoteJid!
+}
+```
+
+## JID addressing modes
+
+Baileys supports two addressing modes:
+
+```typescript
+enum WAMessageAddressingMode {
+    PN = 'pn',   // Phone number mode
+    LID = 'lid'  // LID (Linked ID) mode
+}
+```
+
+<Info>
+LID addressing is used internally by WhatsApp for multi-device functionality. In most cases, you'll work with phone number (PN) mode.
+</Info>
+
+## Common JID patterns
+
+Here are common patterns for working with JIDs:
+
+```typescript
+// Send message to user
+await sock.sendMessage(
+    '1234567890@s.whatsapp.net',
+    { text: 'Hello!' }
+)
+
+// Send message to group
+await sock.sendMessage(
+    '123456789-1234567890@g.us',
+    { text: 'Hello group!' }
+)
+
+// Reply to message (preserves JID context)
+await sock.sendMessage(
+    msg.key.remoteJid!,
+    { text: 'Reply' },
+    { quoted: msg }
+)
+
+// Check if message is from group
+if (isJidGroup(msg.key.remoteJid)) {
+    console.log('Message from group')
+}
+
+// Filter out broadcast messages
+if (!isJidBroadcast(jid)) {
+    // Process non-broadcast message
+}
+```
+
+## JID validation example
+
+Create a robust JID validator:
+
+```typescript
+function isValidJid(jid: string): boolean {
+    const patterns = [
+        /^\d+@s\.whatsapp\.net$/,              // User
+        /^\d+-\d+@g\.us$/,                       // Group
+        /^\d+@broadcast$/,                       // Broadcast
+        /^status@broadcast$/,                    // Status
+        /^\d+@newsletter$/                       // Newsletter
+    ]
+    
+    return patterns.some(pattern => pattern.test(jid))
+}
+
+// Usage
+if (isValidJid('1234567890@s.whatsapp.net')) {
+    console.log('Valid JID')
+}
+```
+
+## Best practices
+
+<Steps>
+  <Step title="Always validate JIDs">
+    Check if a JID exists before sending messages:
+    
+    ```typescript
+    const [result] = await sock.onWhatsApp(jid)
+    if (!result?.exists) {
+        throw new Error('JID does not exist')
+    }
+    ```
+  </Step>
+  
+  <Step title="Use utility functions">
+    Use Baileys' built-in functions to check JID types:
+    
+    ```typescript
+    if (isJidGroup(jid)) {
+        // Handle group
+    }
+    ```
+  </Step>
+  
+  <Step title="Store JIDs consistently">
+    Always store JIDs in their full format including the server domain:
+    
+    ```typescript
+    // Good: '1234567890@s.whatsapp.net'
+    // Bad:  '1234567890'
+    ```
+  </Step>
+  
+  <Step title="Handle group participants correctly">
+    In group messages, use `msg.key.participant` to identify the sender:
+    
+    ```typescript
+    const sender = msg.key.participant || msg.key.remoteJid
+    ```
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Sending messages" icon="paper-plane" href="/guides/sending-messages">
+    Learn how to send messages to different JID types
+  </Card>
+  <Card title="Group management" icon="users" href="/guides/groups">
+    Work with group JIDs and participants
+  </Card>
+</CardGroup>

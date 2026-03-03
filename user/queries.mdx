@@ -1,0 +1,107 @@
+---
+title: User queries
+description: Query user information including existence checks, status, profile pictures, and business profiles
+---
+
+## Check if ID exists on WhatsApp
+
+Verify whether a phone number is registered on WhatsApp.
+
+```typescript
+const [result] = await sock.onWhatsApp(jid)
+if (result.exists) console.log(`${jid} exists on WhatsApp, as jid: ${result.jid}`)
+```
+
+<ParamField path="phoneNumber" type="string" rest required>
+  One or more phone numbers to check (with country code)
+</ParamField>
+
+<Info>
+  Returns an array of objects with `jid` and `exists` properties for each phone number checked.
+</Info>
+
+## Fetch user status
+
+Retrieve the status message of a user.
+
+```typescript
+const status = await sock.fetchStatus(jid)
+console.log('status: ' + status)
+```
+
+<ParamField path="jids" type="string" rest required>
+  One or more JIDs to fetch status for
+</ParamField>
+
+## Fetch profile picture URL
+
+Get the profile picture URL for a user or group.
+
+```typescript
+// for low res picture
+const ppUrl = await sock.profilePictureUrl(jid)
+console.log(ppUrl)
+
+// for high res picture
+const ppUrl = await sock.profilePictureUrl(jid, 'image')
+```
+
+<ParamField path="jid" type="string" required>
+  The JID of the user or group
+</ParamField>
+
+<ParamField path="type" type="'preview' | 'image'" default="'preview'">
+  Resolution type:
+  - `preview` - Low resolution thumbnail
+  - `image` - High resolution image
+</ParamField>
+
+<ParamField path="timeoutMs" type="number">
+  Optional timeout in milliseconds for the request
+</ParamField>
+
+## Fetch business profile
+
+Retrieve business profile information such as description or category.
+
+```typescript
+const profile = await sock.getBusinessProfile(jid)
+console.log('business description: ' + profile.description + ', category: ' + profile.category)
+```
+
+<ParamField path="jid" type="string" required>
+  The JID of the business account
+</ParamField>
+
+<Note>
+  This method only works for business accounts. Regular user accounts will not return profile information.
+</Note>
+
+## Query chat history
+
+Fetch historical messages from a chat or group.
+
+```typescript
+const msg = await getOldestMessageInChat(jid) // implement this on your end
+await sock.fetchMessageHistory(
+    50, // quantity (max: 50 per query)
+    msg.key,
+    msg.messageTimestamp
+)
+```
+
+<ParamField path="count" type="number" required>
+  Number of messages to fetch (maximum 50 per query)
+</ParamField>
+
+<ParamField path="oldestMsgKey" type="WAMessageKey" required>
+  The message key of the oldest message you have in the chat
+</ParamField>
+
+<ParamField path="oldestMsgTimestamp" type="number | Long" required>
+  The timestamp of the oldest message
+</ParamField>
+
+<Info>
+  Messages will be received in the `messaging.history-set` event. You need to have the oldest message in the chat to use this method.
+</Info>

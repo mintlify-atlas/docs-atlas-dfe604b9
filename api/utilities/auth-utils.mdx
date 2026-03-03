@@ -1,0 +1,329 @@
+---
+title: Authentication utilities
+description: Utilities for managing authentication state and credentials in Baileys
+---
+
+Authentication utilities provide functions for managing WhatsApp authentication state, credentials storage, and signal protocol key management.
+
+## useMultiFileAuthState
+
+Stores the full authentication state in a single folder using separate files for each credential type. More efficient than single-file storage for production use.
+
+```typescript
+const useMultiFileAuthState: (
+  folder: string
+) => Promise<{
+  state: AuthenticationState
+  saveCreds: () => Promise<void>
+}>
+```
+
+### Parameters
+
+<ParamField path="folder" type="string" required>
+  Path to the folder where authentication files will be stored. The folder will be created if it doesn't exist.
+</ParamField>
+
+### Returns
+
+<ResponseField name="state" type="AuthenticationState">
+  The authentication state object containing credentials and key storage methods.
+  
+  <ResponseField name="creds" type="AuthenticationCreds">
+    Authentication credentials including noise keys, identity keys, and registration data.
+  </ResponseField>
+  
+  <ResponseField name="keys" type="object">
+    Key storage interface for Signal protocol keys.
+    
+    <ResponseField name="get" type="function">
+      Retrieves keys by type and IDs from storage.
+    </ResponseField>
+    
+    <ResponseField name="set" type="function">
+      Stores keys to the file system.
+    </ResponseField>
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="saveCreds" type="() => Promise<void>">
+  Function to save the current credentials to disk.
+</ResponseField>
+
+### Usage example
+
+```typescript
+import { useMultiFileAuthState } from '@whiskeysockets/baileys'
+
+const { state, saveCreds } = await useMultiFileAuthState('./auth_info')
+
+const sock = makeWASocket({
+  auth: state,
+  // ... other options
+})
+
+// Save credentials whenever they're updated
+sock.ev.on('creds.update', saveCreds)
+```
+
+<Note>
+  While efficient for bots and small applications, this is not recommended for production-level use. Consider implementing a custom auth state using a SQL or NoSQL database for better scalability.
+</Note>
+
+## makeCacheableSignalKeyStore
+
+Adds in-memory caching capability to a SignalKeyStore to improve performance by reducing database queries.
+
+```typescript
+function makeCacheableSignalKeyStore(
+  store: SignalKeyStore,
+  logger?: ILogger,
+  cache?: CacheStore
+): SignalKeyStore
+```
+
+### Parameters
+
+<ParamField path="store" type="SignalKeyStore" required>
+  The base signal key store to add caching to.
+</ParamField>
+
+<ParamField path="logger" type="ILogger">
+  Optional logger instance for tracing cache events.
+</ParamField>
+
+<ParamField path="cache" type="CacheStore">
+  Optional custom cache store. If not provided, a default NodeCache instance with 5-minute TTL will be used.
+</ParamField>
+
+### Returns
+
+A `SignalKeyStore` instance with caching capability that:
+- Checks cache before querying the underlying store
+- Automatically updates cache on writes
+- Reduces database load for frequently accessed keys
+
+### Usage example
+
+```typescript
+import { makeCacheableSignalKeyStore } from '@whiskeysockets/baileys'
+
+const { state } = await useMultiFileAuthState('./auth_info')
+
+// Add caching to the key store
+const cachedStore = makeCacheableSignalKeyStore(
+  state.keys,
+  logger
+)
+
+const sock = makeWASocket({
+  auth: {
+    creds: state.creds,
+    keys: cachedStore
+  }
+})
+```
+
+## initAuthCreds
+
+Initializes a new set of authentication credentials for a fresh WhatsApp connection.
+
+```typescript
+function initAuthCreds(): AuthenticationCreds
+```
+
+### Returns
+
+<ResponseField name="AuthenticationCreds" type="object">
+  A new authentication credentials object containing:
+  
+  <ResponseField name="noiseKey" type="KeyPair">
+    Noise protocol key pair for encrypted communication.
+  </ResponseField>
+  
+  <ResponseField name="pairingEphemeralKeyPair" type="KeyPair">
+    Ephemeral key pair used during QR code pairing.
+  </ResponseField>
+  
+  <ResponseField name="signedIdentityKey" type="KeyPair">
+    Signed identity key for the Signal protocol.
+  </ResponseField>
+  
+  <ResponseField name="signedPreKey" type="SignedKeyPair">
+    Signed pre-key for Signal protocol key exchange.
+  </ResponseField>
+  
+  <ResponseField name="registrationId" type="number">
+    Random registration ID (0-16383).
+  </ResponseField>
+  
+  <ResponseField name="advSecretKey" type="string">
+    Base64-encoded advanced encryption secret key.
+  </ResponseField>
+  
+  <ResponseField name="nextPreKeyId" type="number">
+    Counter for the next pre-key ID (starts at 1).
+  </ResponseField>
+  
+  <ResponseField name="firstUnuploadedPreKeyId" type="number">
+    ID of the first pre-key that hasn't been uploaded.
+  </ResponseField>
+  
+  <ResponseField name="registered" type="boolean">
+    Whether the credentials have been registered (starts as false).
+  </ResponseField>
+</ResponseField>
+
+### Usage example
+
+```typescript
+import { initAuthCreds } from '@whiskeysockets/baileys'
+
+// Create fresh credentials
+const creds = initAuthCreds()
+
+// Use with a custom auth state implementation
+const state = {
+  creds,
+  keys: {
+    get: async (type, ids) => { /* your implementation */ },
+    set: async (data) => { /* your implementation */ }
+  }
+}
+```
+
+## addTransactionCapability
+
+Adds database-like transaction capability to a SignalKeyStore for atomic operations and improved consistency.
+
+```typescript
+function addTransactionCapability(
+  state: SignalKeyStore,
+  logger: ILogger,
+  options: TransactionCapabilityOptions
+): SignalKeyStoreWithTransaction
+```
+
+### Parameters
+
+<ParamField path="state" type="SignalKeyStore" required>
+  The base signal key store to add transaction support to.
+</ParamField>
+
+<ParamField path="logger" type="ILogger" required>
+  Logger instance for transaction events.
+</ParamField>
+
+<ParamField path="options" type="TransactionCapabilityOptions" required>
+  Transaction configuration options.
+  
+  <ParamField path="maxCommitRetries" type="number">
+    Maximum number of retry attempts for failed commits.
+  </ParamField>
+  
+  <ParamField path="delayBetweenTriesMs" type="number">
+    Delay in milliseconds between retry attempts.
+  </ParamField>
+</ParamField>
+
+### Returns
+
+A `SignalKeyStoreWithTransaction` that extends `SignalKeyStore` with:
+- `transaction(work, key)` - Execute work within a transaction
+- `isInTransaction()` - Check if currently in a transaction context
+
+### Usage example
+
+```typescript
+import { addTransactionCapability } from '@whiskeysockets/baileys'
+
+const storeWithTx = addTransactionCapability(
+  baseStore,
+  logger,
+  {
+    maxCommitRetries: 3,
+    delayBetweenTriesMs: 200
+  }
+)
+
+// Use transactions for atomic operations
+await storeWithTx.transaction(async () => {
+  // All operations here are atomic
+  await storeWithTx.set({
+    'pre-key': { '1': preKey1, '2': preKey2 },
+    'session': { 'user@s.whatsapp.net': session }
+  })
+}, 'unique-transaction-key')
+```
+
+## BufferJSON
+
+Utility object for JSON serialization and deserialization of Buffer objects.
+
+```typescript
+const BufferJSON = {
+  replacer: (key: any, value: any) => any
+  reviver: (key: any, value: any) => any
+}
+```
+
+### Properties
+
+<ResponseField name="replacer" type="function">
+  JSON.stringify replacer function that converts Buffer objects to base64-encoded objects.
+</ResponseField>
+
+<ResponseField name="reviver" type="function">
+  JSON.parse reviver function that converts base64-encoded objects back to Buffers.
+</ResponseField>
+
+### Usage example
+
+```typescript
+import { BufferJSON } from '@whiskeysockets/baileys'
+
+const data = {
+  name: 'test',
+  buffer: Buffer.from('hello world')
+}
+
+// Serialize with Buffer support
+const json = JSON.stringify(data, BufferJSON.replacer)
+
+// Deserialize back to original form
+const restored = JSON.parse(json, BufferJSON.reviver)
+console.log(Buffer.isBuffer(restored.buffer)) // true
+```
+
+<Note>
+  The BufferJSON utility is particularly useful when persisting authentication state to JSON files, as it handles the serialization of cryptographic keys and other binary data.
+</Note>
+
+## generateRegistrationId
+
+Generates a random registration ID for WhatsApp authentication.
+
+```typescript
+function generateRegistrationId(): number
+```
+
+### Returns
+
+A random number between 0 and 16383 (14-bit value) used as the registration ID.
+
+### Usage example
+
+```typescript
+import { generateRegistrationId } from '@whiskeysockets/baileys'
+
+const regId = generateRegistrationId()
+console.log(regId) // e.g., 8472
+```
+
+## Related types
+
+- `AuthenticationState` - Complete authentication state structure
+- `AuthenticationCreds` - Credential data structure  
+- `SignalKeyStore` - Interface for storing Signal protocol keys
+- `SignalKeyStoreWithTransaction` - Extended interface with transaction support
+- `SignalDataTypeMap` - Mapping of signal data types to their value types

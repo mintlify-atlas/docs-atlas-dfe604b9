@@ -1,0 +1,476 @@
+---
+title: Data store
+description: Learn how to implement data storage for messages, chats, and contacts in Baileys
+---
+
+Baileys does not include a default persistent storage solution. You must implement your own data store to save messages, chats, and contacts.
+
+## Why implement a data store?
+
+A data store serves several critical purposes:
+
+- **Message retry**: Enable failed messages to be retried by implementing `getMessage`
+- **Poll decryption**: Decrypt poll votes by retrieving the original poll message
+- **Chat history**: Maintain conversation history across restarts
+- **Contact management**: Store contact information and profile pictures
+- **Performance**: Cache data to reduce API calls to WhatsApp servers
+
+<Warning>
+Baileys provides an in-memory store for testing, but storing an entire chat history in memory is inefficient for production. Always implement a persistent data store using a database.
+</Warning>
+
+## In-memory store (development only)
+
+Baileys includes a simple in-memory store for development and testing:
+
+```typescript
+import makeWASocket, { makeInMemoryStore } from '@whiskeysockets/baileys'
+
+// Create the in-memory store
+const store = makeInMemoryStore({ })
+
+// Read from file on startup (optional)
+store.readFromFile('./baileys_store.json')
+
+// Save to file every 10 seconds
+setInterval(() => {
+    store.writeToFile('./baileys_store.json')
+}, 10_000)
+
+// Create socket
+const sock = makeWASocket({ /* config */ })
+
+// Bind store to socket events
+store.bind(sock.ev)
+```
+
+### Accessing stored data
+
+Once bound, the store maintains collections you can query:
+
+```typescript
+// Access chats
+sock.ev.on('chats.upsert', () => {
+    console.log('All chats:', store.chats.all())
+})
+
+// Access contacts
+sock.ev.on('contacts.upsert', () => {
+    console.log('All contacts:', Object.values(store.contacts))
+})
+
+// Load messages for a chat
+const messages = await store.loadMessages(jid, 25)
+console.log('Recent messages:', messages)
+```
+
+<Info>
+The in-memory store provides utility functions like `loadMessages` that can speed up data retrieval during development.
+</Info>
+
+## Implementing getMessage
+
+The `getMessage` function is crucial for message retry and poll decryption:
+
+```typescript
+import { WAMessageKey, proto } from '@whiskeysockets/baileys'
+
+const sock = makeWASocket({
+    getMessage: async (key: WAMessageKey) => {
+        // Retrieve message from your store
+        const message = await db.messages.findOne({
+            id: key.id,
+            remoteJid: key.remoteJid
+        })
+        
+        return message?.message || undefined
+    }
+})
+```
+
+### Why getMessage is important
+
+<Tabs>
+  <Tab title="Message retry">
+    When message delivery fails, WhatsApp can request a retry. Without `getMessage`, retries will fail:
+    
+    ```typescript
+    getMessage: async (key) => {
+        // Return the original message for retry
+        return await getMessageFromDatabase(key)
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Poll decryption">
+    Poll votes are encrypted. To decrypt them, you need the original poll creation message:
+    
+    ```typescript
+    sock.ev.on('messages.update', async (updates) => {
+        for (const { key, update } of updates) {
+            if (update.pollUpdates) {
+                const pollCreation = await getMessage(key)
+                if (pollCreation) {
+                    const results = getAggregateVotesInPollMessage({
+                        message: pollCreation,
+                        pollUpdates: update.pollUpdates
+                    })
+                }
+            }
+        }
+    })
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+If you don't implement `getMessage`, message retries will fail and poll votes cannot be decrypted.
+</Warning>
+
+## Database implementation patterns
+
+### SQL database example
+
+Implement a data store using PostgreSQL:
+
+```typescript
+import { Pool } from 'pg'
+import makeWASocket from '@whiskeysockets/baileys'
+
+const pool = new Pool({
+    host: 'localhost',
+    database: 'whatsapp',
+    user: 'user',
+    password: 'password'
+})
+
+// Create tables
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+        id TEXT,
+        remote_jid TEXT,
+        from_me BOOLEAN,
+        participant TEXT,
+        message JSONB,
+        timestamp BIGINT,
+        PRIMARY KEY (id, remote_jid)
+    )
+`)
+
+await pool.query(`
+    CREATE TABLE IF NOT EXISTS chats (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        unread_count INTEGER,
+        last_message_timestamp BIGINT
+    )
+`)
+
+// Implement getMessage
+const getMessage = async (key) => {
+    const result = await pool.query(
+        'SELECT message FROM messages WHERE id = $1 AND remote_jid = $2',
+        [key.id, key.remoteJid]
+    )
+    
+    return result.rows[0]?.message
+}
+
+const sock = makeWASocket({
+    getMessage
+})
+
+// Store messages
+sock.ev.on('messages.upsert', async ({ messages }) => {
+    for (const msg of messages) {
+        await pool.query(
+            `INSERT INTO messages (id, remote_jid, from_me, participant, message, timestamp)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (id, remote_jid) DO UPDATE SET message = $5`,
+            [
+                msg.key.id,
+                msg.key.remoteJid,
+                msg.key.fromMe,
+                msg.key.participant,
+                JSON.stringify(msg.message),
+                msg.messageTimestamp
+            ]
+        )
+    }
+})
+
+// Store chats
+sock.ev.on('chats.upsert', async (chats) => {
+    for (const chat of chats) {
+        await pool.query(
+            `INSERT INTO chats (id, name, unread_count, last_message_timestamp)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (id) DO UPDATE SET
+                name = $2,
+                unread_count = $3,
+                last_message_timestamp = $4`,
+            [chat.id, chat.name, chat.unreadCount, chat.conversationTimestamp]
+        )
+    }
+})
+```
+
+### MongoDB example
+
+Implement a data store using MongoDB:
+
+```typescript
+import { MongoClient } from 'mongodb'
+import makeWASocket from '@whiskeysockets/baileys'
+
+const client = new MongoClient('mongodb://localhost:27017')
+await client.connect()
+
+const db = client.db('whatsapp')
+const messages = db.collection('messages')
+const chats = db.collection('chats')
+const contacts = db.collection('contacts')
+
+// Create indexes
+await messages.createIndex({ 'key.id': 1, 'key.remoteJid': 1 }, { unique: true })
+await chats.createIndex({ id: 1 }, { unique: true })
+
+// Implement getMessage
+const getMessage = async (key) => {
+    const msg = await messages.findOne({
+        'key.id': key.id,
+        'key.remoteJid': key.remoteJid
+    })
+    
+    return msg?.message
+}
+
+const sock = makeWASocket({
+    getMessage
+})
+
+// Store messages
+sock.ev.on('messages.upsert', async ({ messages: msgs }) => {
+    for (const msg of msgs) {
+        await messages.updateOne(
+            { 'key.id': msg.key.id, 'key.remoteJid': msg.key.remoteJid },
+            { $set: msg },
+            { upsert: true }
+        )
+    }
+})
+
+// Store chats
+sock.ev.on('chats.upsert', async (chats) => {
+    for (const chat of chats) {
+        await chats.updateOne(
+            { id: chat.id },
+            { $set: chat },
+            { upsert: true }
+        )
+    }
+})
+
+// Store contacts
+sock.ev.on('contacts.upsert', async (contacts) => {
+    for (const contact of contacts) {
+        await contacts.updateOne(
+            { id: contact.id },
+            { $set: contact },
+            { upsert: true }
+        )
+    }
+})
+```
+
+### Redis cache example
+
+Use Redis for caching frequently accessed data:
+
+```typescript
+import { createClient } from 'redis'
+import makeWASocket from '@whiskeysockets/baileys'
+
+const redis = createClient()
+await redis.connect()
+
+// Cache messages for getMessage
+const getMessage = async (key) => {
+    const cacheKey = `message:${key.remoteJid}:${key.id}`
+    const cached = await redis.get(cacheKey)
+    
+    if (cached) {
+        return JSON.parse(cached)
+    }
+    
+    // Fallback to database
+    const msg = await db.getMessage(key)
+    if (msg) {
+        // Cache for 1 hour
+        await redis.setEx(cacheKey, 3600, JSON.stringify(msg))
+    }
+    
+    return msg
+}
+
+const sock = makeWASocket({
+    getMessage
+})
+
+// Cache messages
+sock.ev.on('messages.upsert', async ({ messages }) => {
+    for (const msg of messages) {
+        const cacheKey = `message:${msg.key.remoteJid}:${msg.key.id}`
+        await redis.setEx(cacheKey, 3600, JSON.stringify(msg.message))
+    }
+})
+```
+
+## Caching group metadata
+
+Cache group metadata to improve performance and reduce API calls:
+
+```typescript
+import NodeCache from 'node-cache'
+
+const groupCache = new NodeCache({ 
+    stdTTL: 5 * 60,      // 5 minutes
+    useClones: false 
+})
+
+const sock = makeWASocket({
+    cachedGroupMetadata: async (jid) => groupCache.get(jid)
+})
+
+// Update cache when groups change
+sock.ev.on('groups.update', async (updates) => {
+    for (const update of updates) {
+        const metadata = await sock.groupMetadata(update.id)
+        groupCache.set(update.id, metadata)
+    }
+})
+
+sock.ev.on('group-participants.update', async (event) => {
+    const metadata = await sock.groupMetadata(event.id)
+    groupCache.set(event.id, metadata)
+})
+```
+
+<Info>
+Caching group metadata is highly recommended if your bot works with groups. It significantly reduces API calls and improves response times.
+</Info>
+
+## Data store best practices
+
+<Steps>
+  <Step title="Use a database for persistence">
+    Never rely on in-memory storage for production. Use PostgreSQL, MongoDB, MySQL, or similar.
+  </Step>
+  
+  <Step title="Implement getMessage">
+    Always implement `getMessage` to enable message retry and poll decryption:
+    
+    ```typescript
+    getMessage: async (key) => await db.getMessage(key)
+    ```
+  </Step>
+  
+  <Step title="Index your database">
+    Create indexes on frequently queried fields:
+    
+    ```sql
+    CREATE INDEX idx_messages_jid ON messages(remote_jid);
+    CREATE INDEX idx_messages_timestamp ON messages(timestamp);
+    ```
+  </Step>
+  
+  <Step title="Cache frequently accessed data">
+    Use Redis or similar for caching group metadata and recent messages.
+  </Step>
+  
+  <Step title="Handle upserts properly">
+    Messages can be updated. Use upsert operations to handle both new and updated messages.
+  </Step>
+</Steps>
+
+## Complete example
+
+Here's a complete example with PostgreSQL and Redis:
+
+```typescript
+import makeWASocket, { useMultiFileAuthState } from '@whiskeysockets/baileys'
+import { Pool } from 'pg'
+import { createClient } from 'redis'
+import NodeCache from 'node-cache'
+
+const pool = new Pool({ /* config */ })
+const redis = createClient()
+await redis.connect()
+
+const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
+
+const getMessage = async (key) => {
+    // Try cache first
+    const cacheKey = `msg:${key.remoteJid}:${key.id}`
+    const cached = await redis.get(cacheKey)
+    if (cached) return JSON.parse(cached)
+    
+    // Fallback to database
+    const result = await pool.query(
+        'SELECT message FROM messages WHERE id = $1 AND remote_jid = $2',
+        [key.id, key.remoteJid]
+    )
+    
+    return result.rows[0]?.message
+}
+
+const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+
+const sock = makeWASocket({
+    auth: state,
+    getMessage,
+    cachedGroupMetadata: async (jid) => groupCache.get(jid)
+})
+
+sock.ev.process(async (events) => {
+    if (events['creds.update']) {
+        await saveCreds()
+    }
+    
+    if (events['messages.upsert']) {
+        const { messages } = events['messages.upsert']
+        
+        for (const msg of messages) {
+            // Store in database
+            await pool.query(
+                `INSERT INTO messages (id, remote_jid, message, timestamp)
+                 VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (id, remote_jid) DO UPDATE SET message = $3`,
+                [msg.key.id, msg.key.remoteJid, JSON.stringify(msg.message), msg.messageTimestamp]
+            )
+            
+            // Cache for quick access
+            const cacheKey = `msg:${msg.key.remoteJid}:${msg.key.id}`
+            await redis.setEx(cacheKey, 3600, JSON.stringify(msg.message))
+        }
+    }
+    
+    if (events['groups.update']) {
+        for (const update of events['groups.update']) {
+            const metadata = await sock.groupMetadata(update.id)
+            groupCache.set(update.id, metadata)
+        }
+    }
+})
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="WhatsApp IDs" icon="hashtag" href="/core/whatsapp-ids">
+    Understand JID format and usage
+  </Card>
+  <Card title="Sending messages" icon="paper-plane" href="/guides/sending-messages">
+    Learn how to send different types of messages
+  </Card>
+</CardGroup>

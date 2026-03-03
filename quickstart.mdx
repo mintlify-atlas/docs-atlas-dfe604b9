@@ -1,80 +1,294 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Build your first WhatsApp bot with Baileys in minutes
 ---
 
-## Get started in three steps
+# Quickstart
 
-Get your documentation site running locally and make your first customization.
+This guide will walk you through creating a basic WhatsApp bot that connects to WhatsApp and responds to messages.
 
-### Step 1: Set up your local environment
+## Basic connection example
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+Here's a complete working example that connects to WhatsApp and handles basic events:
+
+```typescript
+import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys'
+import { Boom } from '@hapi/boom'
+
+async function connectToWhatsApp() {
+  const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+  
+  const sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: true
+  })
+  
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect } = update
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    if (connection === 'close') {
+      const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut
+      console.log('connection closed due to ', lastDisconnect?.error, ', reconnecting ', shouldReconnect)
+      
+      // reconnect if not logged out
+      if (shouldReconnect) {
+        connectToWhatsApp()
+      }
+    } else if (connection === 'open') {
+      console.log('opened connection')
+    }
+  })
+  
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    for (const m of messages) {
+      console.log(JSON.stringify(m, undefined, 2))
+      
+      console.log('replying to', m.key.remoteJid)
+      await sock.sendMessage(m.key.remoteJid!, { text: 'Hello World!' })
+    }
+  })
+  
+  // save credentials when updated
+  sock.ev.on('creds.update', saveCreds)
+}
+
+connectToWhatsApp()
+```
+
+<Note>
+  When you run this code for the first time, a QR code will be printed in your terminal. Scan it with WhatsApp on your phone to authenticate.
+</Note>
+
+## How it works
+
+Let's break down the key components:
+
+<Steps>
+  <Step title="Authentication state">
+    The `useMultiFileAuthState` function manages your authentication credentials in a folder called `auth_info_baileys`. This allows you to stay logged in across restarts.
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    ```typescript
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+    ```
+  </Step>
+  
+  <Step title="Create socket connection">
+    `makeWASocket` creates a connection to WhatsApp. The `printQRInTerminal: true` option displays the QR code in your terminal for easy scanning.
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```typescript
+    const sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: true
+    })
+    ```
+  </Step>
+  
+  <Step title="Handle connection updates">
+    The `connection.update` event fires when the connection state changes. You should handle reconnection logic here.
+    
+    ```typescript
+    sock.ev.on('connection.update', (update) => {
+      // Handle connection open, close, etc.
+    })
+    ```
+  </Step>
+  
+  <Step title="Process messages">
+    The `messages.upsert` event fires when new messages arrive. Loop through all messages in the array to handle them.
+    
+    ```typescript
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+      for (const m of messages) {
+        // Process each message
+      }
+    })
+    ```
+  </Step>
+  
+  <Step title="Save credentials">
+    Always save credentials when they're updated to prevent issues with message delivery.
+    
+    ```typescript
+    sock.ev.on('creds.update', saveCreds)
+    ```
+  </Step>
+</Steps>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+## Authentication methods
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+Baileys supports two authentication methods:
 
-### Step 3: Go live
+### QR code (default)
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+Scan a QR code with your phone:
+
+```typescript
+const sock = makeWASocket({
+  auth: state,
+  printQRInTerminal: true
+})
+```
+
+### Pairing code
+
+Use a pairing code instead of QR code:
+
+```typescript
+const sock = makeWASocket({
+  auth: state,
+  printQRInTerminal: false
+})
+
+if (!sock.authState.creds.registered) {
+  const phoneNumber = 'YOUR_PHONE_NUMBER' // without + or () or -, just numbers
+  const code = await sock.requestPairingCode(phoneNumber)
+  console.log(`Pairing code: ${code}`)
+}
+```
+
+<Warning>
+  Phone numbers must be in the format `[country code][number]` with no special characters. For example: `19999999999` for a US number.
+</Warning>
+
+## Sending different message types
+
+Once connected, you can send various types of messages:
+
+### Text messages
+
+```typescript
+await sock.sendMessage(jid, { text: 'Hello World!' })
+```
+
+### Images
+
+```typescript
+import fs from 'fs'
+
+await sock.sendMessage(jid, {
+  image: fs.readFileSync('./image.jpg'),
+  caption: 'Check out this image!'
+})
+```
+
+### Videos
+
+```typescript
+await sock.sendMessage(jid, {
+  video: { url: './video.mp4' },
+  caption: 'Amazing video',
+  gifPlayback: false
+})
+```
+
+### Locations
+
+```typescript
+await sock.sendMessage(jid, {
+  location: {
+    degreesLatitude: 24.121231,
+    degreesLongitude: 55.1121221
+  }
+})
+```
+
+### Reactions
+
+```typescript
+await sock.sendMessage(jid, {
+  react: {
+    text: '👍',
+    key: message.key
+  }
+})
+```
+
+<Tip>
+  You can send media using a file path, URL, or Buffer. For large files, using `{ url: 'path' }` or streams is recommended to save memory.
+</Tip>
+
+## Running the example
+
+The Baileys repository includes a comprehensive example file that demonstrates most common use cases:
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/WhiskeySockets/Baileys.git
+    cd Baileys
+    ```
+  </Step>
+  
+  <Step title="Install dependencies">
+    ```bash
+    yarn install
+    ```
+  </Step>
+  
+  <Step title="Run the example">
+    ```bash
+    yarn example
+    ```
+    
+    Or with optional flags:
+    ```bash
+    yarn example --use-pairing-code  # Use pairing code instead of QR
+    yarn example --do-reply          # Auto-reply to messages
+    ```
+  </Step>
+</Steps>
+
+## Important concepts
+
+### WhatsApp IDs (JIDs)
+
+WhatsApp uses unique identifiers called JIDs for users and groups:
+
+- **Individual chats**: `[country code][phone number]@s.whatsapp.net` (e.g., `19999999999@s.whatsapp.net`)
+- **Group chats**: `[group id]@g.us` (e.g., `123456789-123345@g.us`)
+- **Broadcast lists**: `[timestamp]@broadcast`
+- **Status updates**: `status@broadcast`
+
+### Event handling
+
+Baileys uses EventEmitter for all events. The main events you'll work with:
+
+- `connection.update` - Connection state changes
+- `creds.update` - Authentication credentials updated (always save these!)
+- `messages.upsert` - New messages received
+- `messages.update` - Message status changed (delivered, read, deleted)
+- `presence.update` - User typing or online status
+- `chats.update` - Chat metadata changed
+- `groups.update` - Group settings changed
+
+<Note>
+  For a complete list of events, see the [BaileysEventMap](https://baileys.whiskeysockets.io/types/BaileysEventMap.html) documentation.
+</Note>
+
+### Session persistence
+
+The `useMultiFileAuthState` function saves authentication data to a local folder. This is fine for development but you should implement a database-backed solution for production:
+
+<Warning>
+  Always save updated credentials (`creds.update` event) and key states. Failing to do so will prevent messages from reaching recipients and cause authentication issues.
+</Warning>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Event handling" icon="bolt" href="https://baileys.whiskeysockets.io/types/BaileysEventMap.html" target="_blank">
+    Learn about all available events
+  </Card>
+  
+  <Card title="Message types" icon="message" href="https://baileys.whiskeysockets.io/types/AnyMessageContent.html" target="_blank">
+    Explore all message content types
+  </Card>
+  
+  <Card title="Socket configuration" icon="gear" href="https://baileys.whiskeysockets.io/types/SocketConfig.html" target="_blank">
+    Configure advanced socket options
+  </Card>
+  
+  <Card title="GitHub examples" icon="code" href="https://github.com/WhiskeySockets/Baileys/blob/master/Example/example.ts" target="_blank">
+    View the complete example file
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

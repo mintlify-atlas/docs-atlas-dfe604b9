@@ -1,0 +1,567 @@
+---
+title: Events
+description: Learn about Baileys' event system and how to handle messages, connection updates, and other WhatsApp events
+---
+
+Baileys uses an EventEmitter-based system to notify your application of WhatsApp events like incoming messages, connection changes, and contact updates.
+
+## Event system overview
+
+All events are emitted through the `sock.ev` event emitter with full TypeScript typing:
+
+```typescript
+import makeWASocket from '@whiskeysockets/baileys'
+
+const sock = makeWASocket({ /* config */ })
+
+sock.ev.on('messages.upsert', ({ messages }) => {
+    console.log('Received messages:', messages)
+})
+```
+
+## BaileysEventMap
+
+All available events are defined in the `BaileysEventMap` type:
+
+```typescript BaileysEventMap
+export type BaileysEventMap = {
+    'connection.update': Partial<ConnectionState>
+    'creds.update': Partial<AuthenticationCreds>
+    'messaging-history.set': { /* ... */ }
+    'chats.upsert': Chat[]
+    'chats.update': ChatUpdate[]
+    'chats.delete': string[]
+    'presence.update': { /* ... */ }
+    'contacts.upsert': Contact[]
+    'contacts.update': Partial<Contact>[]
+    'messages.delete': { /* ... */ }
+    'messages.update': WAMessageUpdate[]
+    'messages.media-update': { /* ... */ }[]
+    'messages.upsert': { /* ... */ }
+    'messages.reaction': { /* ... */ }[]
+    'message-receipt.update': MessageUserReceiptUpdate[]
+    'groups.upsert': GroupMetadata[]
+    'groups.update': Partial<GroupMetadata>[]
+    'group-participants.update': { /* ... */ }
+    'call': WACallEvent[]
+    // ... and more
+}
+```
+
+<Info>
+View the complete event map in the [Baileys documentation](https://baileys.whiskeysockets.io/types/BaileysEventMap.html).
+</Info>
+
+## Core events
+
+### Connection events
+
+#### connection.update
+
+Monitor connection state changes:
+
+```typescript
+sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect, qr } = update
+    
+    if (connection === 'open') {
+        console.log('Connected to WhatsApp')
+    } else if (connection === 'close') {
+        console.log('Disconnected from WhatsApp')
+    }
+})
+```
+
+#### creds.update
+
+Save authentication credentials when they update:
+
+```typescript
+const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+
+sock.ev.on('creds.update', saveCreds)
+```
+
+<Warning>
+Always implement `creds.update` to save credentials. Failing to save updated credentials will cause message delivery failures and session issues.
+</Warning>
+
+### Message events
+
+#### messages.upsert
+
+Receive new or updated messages:
+
+```typescript
+sock.ev.on('messages.upsert', ({ messages, type }) => {
+    for (const msg of messages) {
+        // Only handle new messages (not history)
+        if (type === 'notify') {
+            console.log('New message:', msg)
+            
+            const text = msg.message?.conversation || 
+                        msg.message?.extendedTextMessage?.text
+            
+            if (text && !msg.key.fromMe) {
+                console.log('Message from', msg.key.remoteJid, ':', text)
+            }
+        }
+    }
+})
+```
+
+<Tabs>
+  <Tab title="notify">
+    New message received in real-time while connected.
+    
+    ```typescript
+    if (type === 'notify') {
+        // Handle new incoming message
+    }
+    ```
+  </Tab>
+  
+  <Tab title="append">
+    Message appended to chat history (from sync).
+    
+    ```typescript
+    if (type === 'append') {
+        // Historical message from sync
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+Always use a loop to process messages: `for (const message of event.messages)`. The array can contain multiple messages.
+</Info>
+
+#### messages.update
+
+Handle message updates (edits, deletions, status changes):
+
+```typescript
+sock.ev.on('messages.update', (updates) => {
+    for (const { key, update } of updates) {
+        console.log('Message', key.id, 'updated:', update)
+        
+        // Handle poll updates
+        if (update.pollUpdates) {
+            const pollCreation = await getMessage(key)
+            if (pollCreation) {
+                const aggregated = getAggregateVotesInPollMessage({
+                    message: pollCreation,
+                    pollUpdates: update.pollUpdates
+                })
+                console.log('Poll results:', aggregated)
+            }
+        }
+    }
+})
+```
+
+#### messages.reaction
+
+Handle message reactions:
+
+```typescript
+sock.ev.on('messages.reaction', (reactions) => {
+    for (const { key, reaction } of reactions) {
+        console.log(
+            'Reaction', reaction.text,
+            'on message', key.id,
+            'from', reaction.key
+        )
+    }
+})
+```
+
+#### messages.delete
+
+Handle deleted messages:
+
+```typescript
+sock.ev.on('messages.delete', (deletion) => {
+    if ('keys' in deletion) {
+        for (const key of deletion.keys) {
+            console.log('Message deleted:', key.id)
+        }
+    } else if (deletion.all) {
+        console.log('All messages deleted in chat:', deletion.jid)
+    }
+})
+```
+
+### Chat events
+
+#### chats.upsert
+
+New chats created:
+
+```typescript
+sock.ev.on('chats.upsert', (chats) => {
+    for (const chat of chats) {
+        console.log('New chat:', chat.id)
+    }
+})
+```
+
+#### chats.update
+
+Existing chats updated:
+
+```typescript
+sock.ev.on('chats.update', (updates) => {
+    for (const update of updates) {
+        console.log('Chat updated:', update.id, update)
+    }
+})
+```
+
+#### chats.delete
+
+Chats deleted:
+
+```typescript
+sock.ev.on('chats.delete', (deletedChatIds) => {
+    for (const id of deletedChatIds) {
+        console.log('Chat deleted:', id)
+    }
+})
+```
+
+### Contact events
+
+#### contacts.upsert
+
+New contacts added:
+
+```typescript
+sock.ev.on('contacts.upsert', (contacts) => {
+    for (const contact of contacts) {
+        console.log('Contact added:', contact.id, contact.name)
+    }
+})
+```
+
+#### contacts.update
+
+Contact information updated:
+
+```typescript
+sock.ev.on('contacts.update', (updates) => {
+    for (const contact of updates) {
+        if (typeof contact.imgUrl !== 'undefined') {
+            console.log('Contact profile picture updated:', contact.id)
+        }
+    }
+})
+```
+
+### Group events
+
+#### groups.upsert
+
+New groups created or joined:
+
+```typescript
+sock.ev.on('groups.upsert', (groups) => {
+    for (const group of groups) {
+        console.log('New group:', group.id, group.subject)
+    }
+})
+```
+
+#### groups.update
+
+Group metadata updated:
+
+```typescript
+sock.ev.on('groups.update', (updates) => {
+    for (const update of updates) {
+        console.log('Group updated:', update.id, update)
+    }
+})
+```
+
+#### group-participants.update
+
+Group participant changes:
+
+```typescript
+sock.ev.on('group-participants.update', (event) => {
+    console.log(
+        'Participants', event.action,
+        'in group', event.id,
+        ':', event.participants
+    )
+})
+```
+
+<Tabs>
+  <Tab title="add">
+    Participants added to group
+    ```typescript
+    if (event.action === 'add') {
+        console.log('Added:', event.participants)
+    }
+    ```
+  </Tab>
+  
+  <Tab title="remove">
+    Participants removed from group
+    ```typescript
+    if (event.action === 'remove') {
+        console.log('Removed:', event.participants)
+    }
+    ```
+  </Tab>
+  
+  <Tab title="promote">
+    Participants promoted to admin
+    ```typescript
+    if (event.action === 'promote') {
+        console.log('Promoted:', event.participants)
+    }
+    ```
+  </Tab>
+  
+  <Tab title="demote">
+    Participants demoted from admin
+    ```typescript
+    if (event.action === 'demote') {
+        console.log('Demoted:', event.participants)
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Presence events
+
+#### presence.update
+
+User presence updates (online, typing, etc.):
+
+```typescript
+// Subscribe to presence updates for a chat
+await sock.presenceSubscribe(jid)
+
+sock.ev.on('presence.update', ({ id, presences }) => {
+    console.log('Presence update in', id)
+    
+    for (const [participant, presence] of Object.entries(presences)) {
+        console.log(participant, 'is', presence.lastKnownPresence)
+    }
+})
+```
+
+### Call events
+
+#### call
+
+Incoming or outgoing call events:
+
+```typescript
+sock.ev.on('call', (calls) => {
+    for (const call of calls) {
+        console.log('Call from', call.from, ':', call.status)
+        
+        if (call.status === 'offer') {
+            // Reject incoming call
+            await sock.rejectCall(call.id, call.from)
+        }
+    }
+})
+```
+
+## History sync events
+
+### messaging-history.set
+
+Receive message history during initial sync:
+
+```typescript
+sock.ev.on('messaging-history.set', ({ chats, contacts, messages, isLatest }) => {
+    console.log(
+        'Received history:',
+        messages.length, 'messages,',
+        chats.length, 'chats,',
+        contacts.length, 'contacts'
+    )
+    
+    if (isLatest) {
+        console.log('This is the latest history')
+    }
+})
+```
+
+## Event processing
+
+Baileys provides an efficient batch event processing API:
+
+```typescript
+sock.ev.process(async (events) => {
+    // All events are provided in a map
+    if (events['connection.update']) {
+        const update = events['connection.update']
+        // Handle connection update
+    }
+    
+    if (events['messages.upsert']) {
+        const { messages } = events['messages.upsert']
+        // Handle messages
+    }
+    
+    if (events['creds.update']) {
+        await saveCreds()
+    }
+})
+```
+
+<Info>
+The `process` function allows you to handle multiple event types efficiently in a single batch. This is the recommended approach from the example.ts file.
+</Info>
+
+## Complete event handling example
+
+Here's a comprehensive example handling common events:
+
+```typescript
+import makeWASocket, { 
+    DisconnectReason, 
+    useMultiFileAuthState 
+} from '@whiskeysockets/baileys'
+import { Boom } from '@hapi/boom'
+
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+    
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true
+    })
+    
+    sock.ev.process(async (events) => {
+        // Connection updates
+        if (events['connection.update']) {
+            const { connection, lastDisconnect } = events['connection.update']
+            
+            if (connection === 'close') {
+                const shouldReconnect = 
+                    (lastDisconnect?.error as Boom)?.output?.statusCode !== 
+                    DisconnectReason.loggedOut
+                
+                if (shouldReconnect) {
+                    connectToWhatsApp()
+                }
+            } else if (connection === 'open') {
+                console.log('Connected successfully')
+            }
+        }
+        
+        // Save credentials
+        if (events['creds.update']) {
+            await saveCreds()
+        }
+        
+        // Handle new messages
+        if (events['messages.upsert']) {
+            const { messages, type } = events['messages.upsert']
+            
+            if (type === 'notify') {
+                for (const msg of messages) {
+                    const text = msg.message?.conversation || 
+                                msg.message?.extendedTextMessage?.text
+                    
+                    if (text && !msg.key.fromMe) {
+                        console.log('Received:', text)
+                        
+                        // Reply to message
+                        await sock.sendMessage(
+                            msg.key.remoteJid!,
+                            { text: 'Hello!' }
+                        )
+                    }
+                }
+            }
+        }
+        
+        // Handle message updates
+        if (events['messages.update']) {
+            for (const { key, update } of events['messages.update']) {
+                if (update.pollUpdates) {
+                    console.log('Poll updated:', key.id)
+                }
+            }
+        }
+        
+        // Handle group updates
+        if (events['group-participants.update']) {
+            const event = events['group-participants.update']
+            console.log(
+                event.participants, event.action,
+                'in group', event.id
+            )
+        }
+    })
+    
+    return sock
+}
+
+connectToWhatsApp()
+```
+
+## Event handling best practices
+
+<Steps>
+  <Step title="Use event.process for batch handling">
+    Process multiple events efficiently in a single function:
+    
+    ```typescript
+    sock.ev.process(async (events) => {
+        // Handle multiple event types
+    })
+    ```
+  </Step>
+  
+  <Step title="Always save credentials">
+    Implement `creds.update` to prevent session issues:
+    
+    ```typescript
+    if (events['creds.update']) {
+        await saveCreds()
+    }
+    ```
+  </Step>
+  
+  <Step title="Loop through message arrays">
+    Always iterate over message arrays:
+    
+    ```typescript
+    for (const msg of messages) {
+        // Process each message
+    }
+    ```
+  </Step>
+  
+  <Step title="Check message type">
+    Filter for 'notify' type to handle only new messages:
+    
+    ```typescript
+    if (type === 'notify') {
+        // Handle real-time messages
+    }
+    ```
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Data store" icon="database" href="/core/data-store">
+    Implement storage for messages and chats
+  </Card>
+  <Card title="Sending messages" icon="paper-plane" href="/guides/sending-messages">
+    Learn how to send different types of messages
+  </Card>
+</CardGroup>
