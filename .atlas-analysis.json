@@ -1,0 +1,124 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Baileys",
+  "projectDescription": "A WebSockets-based TypeScript library for interacting with the WhatsApp Web API",
+  "theme": "aspen",
+  "primaryColor": "#25D366",
+  "lightColor": "#34E877",
+  "darkColor": "#1EAA52",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "core/authentication",
+              "core/connection",
+              "core/events",
+              "core/data-store",
+              "core/whatsapp-ids"
+            ]
+          },
+          {
+            "group": "Messaging",
+            "pages": [
+              "messaging/sending-messages",
+              "messaging/text-messages",
+              "messaging/media-messages",
+              "messaging/receiving-messages",
+              "messaging/message-modification"
+            ]
+          },
+          {
+            "group": "Groups",
+            "pages": [
+              "groups/overview",
+              "groups/management",
+              "groups/participants",
+              "groups/settings"
+            ]
+          },
+          {
+            "group": "User Operations",
+            "pages": [
+              "user/profile",
+              "user/queries",
+              "user/privacy",
+              "user/presence"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/broadcasts-stories",
+              "advanced/custom-functionality",
+              "advanced/websocket-events",
+              "advanced/debugging"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core",
+            "pages": [
+              "api/make-wa-socket",
+              "api/socket-config",
+              "api/auth-state"
+            ]
+          },
+          {
+            "group": "Types",
+            "pages": [
+              "api/types/message-types",
+              "api/types/event-types",
+              "api/types/socket-types"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utilities/auth-utils",
+              "api/utilities/message-utils",
+              "api/utilities/media-utils"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "WebSocket-based WhatsApp Web API client",
+    "Multi-device authentication support (QR code & pairing code)",
+    "Comprehensive message sending (text, media, polls, reactions)",
+    "Group management and administration",
+    "Privacy settings and user profile management",
+    "Session persistence and credential management",
+    "Event-driven architecture with TypeScript support",
+    "Media upload/download with streaming support"
+  ],
+  "publicApiSurface": [
+    "makeWASocket",
+    "useMultiFileAuthState",
+    "makeInMemoryStore",
+    "downloadMediaMessage",
+    "getContentType",
+    "makeCacheableSignalKeyStore",
+    "DisconnectReason",
+    "WAMessageContent",
+    "WASocket",
+    "BaileysEventMap"
+  ]
+}
